@@ -20,11 +20,14 @@ python -m venv venv
 pip install -r requirements.txt
 
 ## Preparing the English Audio Folder
-### Metadata Creation
+### 1. Metadata Creation
 Run the notebook `dataset_en/metadata.ipynb`
-### Transfering Audio Files to Target Directory
+### 2. Transfering Audio Files to Target Directory
 Run the notebook `dataset_en/fetch_audio.ipynb`
-### Splitting Audio Files into 3-second Clips
+### 3. Download FFMPEG for Windows
+- Download `ffmpeg-git-essentials.7z` from https://www.gyan.dev/ffmpeg/builds/
+- Add the path to `ffmpeg.exe` to your system PATH in environment variables
+### 4. Splitting Audio Files into 3-second Clips
 Run the notebook `dataset_en/audio_splitting.ipynb`
 
 ## Preparing the Bangla Audio Folder
