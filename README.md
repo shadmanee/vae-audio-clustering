@@ -24,6 +24,8 @@ pip install -r requirements.txt
 Run the notebook `dataset_en/metadata.ipynb`
 ### Transfering Audio Files to Target Directory
 Run the notebook `dataset_en/fetch_audio.ipynb`
+### Splitting Audio Files into 3-second Clips
+Run the notebook `dataset_en/audio_splitting.ipynb`
 
 ## Preparing the Bangla Audio Folder
 Run the notebook `dataset_bn/fetch_audio.ipynb`
