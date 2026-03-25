@@ -21,17 +21,17 @@ pip install -r requirements.txt
 
 ## Preparing the English Audio Folder
 ### 1. Metadata Creation
-Run the notebook `notebooks/01_data_preparation/en/metadata_creation_en.ipynb`
+Run the notebook `notebooks/data_preparation/en/metadata_creation_en.ipynb`
 ### 2. Transfering Audio Files to Target Directory
-Run the notebook `notebooks/01_data_preparation/en/fetch_audio_en.ipynb`
+Run the notebook `notebooks/data_preparation/en/fetch_audio_en.ipynb`
 ### 3. Download FFMPEG for Windows
 - Download `ffmpeg-git-essentials.7z` from https://www.gyan.dev/ffmpeg/builds/
 - Add the path to `ffmpeg.exe` to your system PATH in environment variables
 ### 4. Splitting Audio Files into 3-second Clips
-Run the notebook `notebooks/01_data_preparation/en/audio_splitting_en.ipynb`
+Run the notebook `notebooks/data_preparation/en/audio_splitting_en.ipynb`
 
 ## Preparing the Bangla Audio Folder
-Run the notebook `notebooks/01_data_preparation/bn/fetch_audio_bn.ipynb`
+Run the notebook `notebooks/data_preparation/bn/fetch_audio_bn.ipynb`
 
 ## Project Data Directory Structure
 After preparing the data, your project should contain:

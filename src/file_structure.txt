@@ -1,0 +1,14 @@
+src/
+├── __init__.py           # Makes src a package
+├── data_loader.py        # Audio loading, Mel-spectrogram conversion, Normalization
+├── models/               # Keep your architectures here
+│   ├── __init__.py
+│   ├── encoder.py        # CNN or LSTM layers for encoding
+│   ├── decoder.py        # Transposed CNNs for reconstruction
+│   └── vae.py            # The main VAE class (reparameterization trick)
+├── training/
+│   ├── __init__.py
+│   ├── loss.py           # Reconstruction loss + KL Divergence
+│   └── trainer.py        # The training loop class
+├── clustering.py         # K-Means, HDBSCAN, or GMM logic for the latent space
+└── utils.py              # Saving models, plotting latent space, audio playback helpers
