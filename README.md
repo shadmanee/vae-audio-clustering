@@ -6,12 +6,12 @@ This project performs unsupervised clustering of songs using audio feature extra
 
 ### English Audio Dataset
 Download the English dataset from:
-- Dataset name/link: MERGE Dataset
+- Dataset name/directory: MERGE_Audio_Balanced
 - URL: https://zenodo.org/records/13939205
 
 ### Bangla Audio Dataset
 Download the Bangla dataset from:
-- Dataset name/link: BanglaBeats
+- Dataset name/directory: BanglaBeats
 - URL: https://www.kaggle.com/datasets/thisisjibon/banglabeats3sec
 
 ## Create the virtual environment and install the libraries
