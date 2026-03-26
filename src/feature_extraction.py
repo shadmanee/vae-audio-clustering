@@ -1,6 +1,7 @@
 import librosa, random
 import numpy as np
-from config import RAW_AUDIO_DIR_EN, RAW_AUDIO_DIR_BN, FEATURES_DIR, N_SUBSET, SAMPLE_RATE, N_FFT, HOP_LENGTH, N_MELS
+# from config import RAW_AUDIO_DIR_EN, RAW_AUDIO_DIR_BN, FEATURES_DIR, N_SUBSET, SAMPLE_RATE, N_FFT, HOP_LENGTH, N_MELS
+from config import * # type: ignore
 
 random.seed(42)
 
@@ -24,7 +25,8 @@ def extract_mel_spectrogram(audio_path):
         n_mels=N_MELS
     )
     spec_db = librosa.power_to_db(spec, ref=np.max)
-    return minmax_normalize(spec_db)
+    # return minmax_normalize(spec_db)
+    return spec_db
 
 def main():
     en_audio_list = [p for p in RAW_AUDIO_DIR_EN.iterdir() if p.is_file() and p.suffix.lower() == ".wav"]

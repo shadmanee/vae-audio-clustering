@@ -15,9 +15,9 @@ Download the Bangla dataset from:
 - URL: https://www.kaggle.com/datasets/thisisjibon/banglabeats3sec
 
 ## Create the virtual environment and install the libraries
-python -m venv venv
-./venv/Scripts/activate
-pip install -r requirements.txt
+1. python -m venv venv 
+2. ./venv/Scripts/activate
+3. pip install -r requirements.txt
 
 ## Preparing the English Audio Folder
 ### 1. Metadata Creation

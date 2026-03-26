@@ -4,3 +4,7 @@ kagglehub
 pydub
 matplotlib
 librosa
+# torch
+# torchvision
+scikit-learn
+torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
