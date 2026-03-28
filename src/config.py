@@ -4,7 +4,7 @@ RAW_AUDIO_DIR_EN = Path("data/audio/en_clips")
 RAW_AUDIO_DIR_BN = Path("data/audio/bn_clips")
 FEATURES_DIR = Path("data/features")
 
-N_SUBSET = 1000 # an integer or None
+N_SUBSET = 2500 # an integer or None
 
 # spectrogram parameters
 SAMPLE_RATE = 22050
