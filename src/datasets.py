@@ -1,6 +1,7 @@
-import torch, config, numpy as np
+import torch, numpy as np
 from torch.utils.data import Dataset
 
+from config import config
 from utils.audio_data import check_global_min_max
 
 class AudioSpectrogramDataset(Dataset):

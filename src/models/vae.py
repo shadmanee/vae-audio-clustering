@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
+from config import BaseConfig
 
 class VAE(nn.Module):
-    def __init__(self, cfg, model_type="basic"):
+    def __init__(self, cfg: BaseConfig, model_type="basic"):
         super().__init__()
         self.config = cfg
         self.model_type = model_type # "basic", "conv" or "beta"/"cvae"
@@ -20,18 +21,18 @@ class VAE(nn.Module):
             raise ValueError(f"{self.model_type} is not a valid model type.")
         
         self.encoder = Encoder(
-            input_height=cfg.INPUT_HEIGHT,
-            input_width=cfg.INPUT_WIDTH,
-            hidden_dim_1=cfg.HIDDEN_DIM_1,
-            hidden_dim_2=cfg.HIDDEN_DIM_2,
-            latent_dim=cfg.LATENT_DIM
+            input_height=self.config.INPUT_HEIGHT,
+            input_width=self.config.INPUT_WIDTH,
+            hidden_dim_1=self.config.HIDDEN_DIM_1,
+            hidden_dim_2=self.config.HIDDEN_DIM_2,
+            latent_dim=self.config.LATENT_DIM
         )
         self.decoder = Decoder(
-            output_height=cfg.INPUT_HEIGHT,
-            output_width=cfg.INPUT_WIDTH,
-            hidden_dim_1=cfg.HIDDEN_DIM_1,
-            hidden_dim_2=cfg.HIDDEN_DIM_2,
-            latent_dim=cfg.LATENT_DIM
+            output_height=self.config.INPUT_HEIGHT,
+            output_width=self.config.INPUT_WIDTH,
+            hidden_dim_1=self.config.HIDDEN_DIM_1,
+            hidden_dim_2=self.config.HIDDEN_DIM_2,
+            latent_dim=self.config.LATENT_DIM
         )
         
     def reparameterize(self, mu, logvar):

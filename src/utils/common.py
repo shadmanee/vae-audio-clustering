@@ -1,9 +1,13 @@
+from pathlib import Path
+
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, random_split
 
 from typing import Tuple
-import config, matplotlib.pyplot as plt
+from config import config, BaseConfig
+
+import matplotlib.pyplot as plt, numpy as np, pandas as pd, os
 
 def split_data(dataset, ratio=0.8, batch_size=32, shuffle=True) -> Tuple[DataLoader, DataLoader]:
     train_size = int(ratio * len(dataset))
@@ -14,6 +18,12 @@ def split_data(dataset, ratio=0.8, batch_size=32, shuffle=True) -> Tuple[DataLoa
     test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False)
     
     return train_loader, test_loader
+
+def loader_to_numpy(loader):
+    xs = []
+    for x,_ in loader:
+        xs.append(x.view(x.size(0), -1).numpy())
+    return np.concatenate(xs)
     
 # TODO: more complex annealing: https://github.com/hubertrybka/vae-annealing
 # annealing starts at 0.1 and is capped at beta
@@ -42,6 +52,7 @@ def train_one_epoch(model, loader, optimizer, epoch, beta=1.0, beta_type="fixed"
         if config.DEBUG: print(f"Calculating training stats on {batch_i + 1}...")
         loss, recon, kl = vae_loss(x_hat=x_hat, x=x, mu=mu, logvar=logvar, epoch=epoch, beta=beta, beta_type=beta_type)
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
         total_sum += loss.item()
@@ -138,3 +149,46 @@ def plot_history(history, title):
     plt.ylabel("Loss")
     plt.legend()
     plt.show()
+    
+def create_new_config(best_params):
+    """
+    Create a new config object from best_params dict returned by study.best_params.
+    Only overrides attributes that exist in best_params — everything else is
+    inherited from base_cfg (or BaseConfig defaults if base_cfg is None).
+    """
+    cfg = BaseConfig()
+    
+    for key, value in best_params.items():
+        if hasattr(cfg, key):
+            setattr(cfg, key, value)
+        else:
+            print(f"Warning: '{key}' from best_params not found in config — skipping.")
+    
+    return cfg
+
+def save_result_to_csv(study=None, history=None, model_name=None, save_dir=config.RESULT_DIR):
+    trial_dir = save_dir / Path("trials")
+    final_dir = save_dir / Path("final")
+    trial_dir.mkdir(parents=True, exist_ok=True)
+    final_dir.mkdir(parents=True, exist_ok=True)
+    
+    if study is not None:
+        df: pd.DataFrame = study.trials_dataframe()
+        filepath = os.path.join(trial_dir, f"{model_name}_tuning_results.csv")
+        df.to_csv(filepath, index=False)
+    
+    if history is not None:
+        df_history = pd.DataFrame(history)
+        history_path = final_dir / f"{model_name}_training_history.csv"
+        df_history.to_csv(history_path, index_label="epoch")
+        
+def extract_latents(model, loader, device=None):
+    model.eval()
+    latents = []
+    with torch.no_grad():
+        for x, _ in loader:
+            x = x.to(device)
+            mu, _ = model.encoder(x)
+            latents.append(mu.cpu().numpy())
+            
+    return np.concatenate(latents)

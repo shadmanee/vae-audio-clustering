@@ -1,0 +1,2 @@
+model_type,optimal_k,inertia,silhouette,ch_index
+pca,6,38995.90625,0.15530014038085938,205.06942154367633
