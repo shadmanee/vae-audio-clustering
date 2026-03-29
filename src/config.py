@@ -1,31 +1,61 @@
 from pathlib import Path
+import os
 
-RAW_AUDIO_DIR_EN = Path("data/audio/en_clips")
-RAW_AUDIO_DIR_BN = Path("data/audio/bn_clips")
-FEATURES_DIR = Path("data/features")
+class BaseConfig:
+    # general user defined (fixed) parameters
+    RAW_AUDIO_DIR_EN = Path("data/audio/en_clips")
+    RAW_AUDIO_DIR_BN = Path("data/audio/bn_clips")
+    FEATURES_DIR = Path("data/features/en_only")
+    LYRICS_DIR_EN = Path("data/lyrics/en")
+    EMBEDDINGS_DIR = Path("data/embeddings")
+    RESULT_DIR = Path("results")
 
-N_SUBSET = 2500 # an integer or None
+    DEBUG = False
 
-# spectrogram parameters
-SAMPLE_RATE = 22050
-N_FFT = 2048
-HOP_LENGTH = 735
-N_MELS = 64
+    N_SUBSET = 2500 # an integer or None
+    
+    MODEL_TYPE = "basic"
 
-# dataset related parameters
-BATCH_SIZE = [32, 64, 128]
-SHUFFLE = True
+    # spectrogram parameters
+    SAMPLE_RATE = 22050
+    N_FFT = 2048
+    HOP_LENGTH = 735
+    N_MELS = 64
+    
+    # vae user defined (fixed) parameters
+    INPUT_HEIGHT = 64
+    INPUT_WIDTH = 91
+    INPUT_DIM = INPUT_HEIGHT * INPUT_WIDTH
+    
+    # general user defined (fixed) parameters
+    EPOCHS = 50
+    TRIALS = 30
+    SHUFFLE = True
 
-# vae user input parameters
-INPUT_HEIGHT = 64
-INPUT_WIDTH = 91
-INPUT_DIM = INPUT_HEIGHT * INPUT_WIDTH
+    # dataset related shared tunable parameters
+    BATCH_SIZE: int = 16
 
-# vae tunable parameters
-LATENT_DIM = [8, 16, 32, 64][2]
-HIDDEN_DIM_1 = [256, 512, 1024, 2048][1]
-HIDDEN_DIM_2 = [64, 128, 256, 512][1]
-DROPOUT = [0.0, 0.1, 0.2, 0.3][0]
-BETA = [0.1, 0.5, 1.0, 2.0, 4.0][4]
-LR = [1e-4, 3e-4, 1e-3, 3e-3][0]
-EPOCHS = 30
+    # vae related tunable parameters
+    LATENT_DIM: int = 32
+    HIDDEN_DIM_1: int = 512 # channel layer-1
+    HIDDEN_DIM_2: int = 256 # channel layer-2
+    HIDDEN_DIM_3: int = 128 # channel layer-3
+    BETA: float = 1.0
+    BETA_TYPE: str = "fixed" # TODO: idt this should be a hyperparameter
+    
+    # general shared tunable parameters
+    LR: float = 1e-4 # suggest_float returns float
+    
+    # HuggingFace
+    HF_TOKEN = os.environ.get("HF_TOKEN")
+    
+config = BaseConfig()
+
+"""
+Basic VAE trial run best parameters:
+{'latent_dim': 16,
+ 'hidden_dim_1': 512,
+ 'hidden_dim_2': 256,
+ 'lr': 0.00047128915005434553,
+ 'batch_size': 16}
+"""
