@@ -11,3 +11,4 @@ optuna
 yellowbrick
 dotenv
 sentence-transformers
+umap-learn
