@@ -5,7 +5,7 @@ from sklearn.metrics import silhouette_score, silhouette_samples
 def _save_elbow_plot(visualizer, save_dir):
     path = os.path.join(save_dir, "elbow_plot.png")
     visualizer.show(outpath=path, clear_figure=True)
-    print(f"Elbow plot saved to {path}")
+    # print(f"Elbow plot saved to {path}")
     
 def _save_silhouette_plot(latent_vecs, kmeans, optimal_k, save_dir):
     sample_silhouette_values = silhouette_samples(latent_vecs, kmeans.labels_)
@@ -32,7 +32,7 @@ def _save_silhouette_plot(latent_vecs, kmeans, optimal_k, save_dir):
     path = os.path.join(save_dir, "silhouette_plot.png")
     plt.savefig(path)
     plt.close()
-    print(f"Silhouette plot saved to {path}")
+    # print(f"Silhouette plot saved to {path}")
     
 def _append_metrics_to_csv(metrics, model_type, save_dir):
     csv_path = os.path.join(save_dir, "clustering_results.csv")
@@ -48,4 +48,4 @@ def _append_metrics_to_csv(metrics, model_type, save_dir):
         df_combined = df_new
 
     df_combined.to_csv(csv_path, index=False)
-    print(f"Metrics saved to {csv_path}")
+    # print(f"Metrics saved to {csv_path}")

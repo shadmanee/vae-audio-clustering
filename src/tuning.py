@@ -1,8 +1,8 @@
 from pathlib import Path
-import optuna, torch, numpy as np
+import optuna, torch, numpy as np, os, shutil
 import torch.optim as optim
 from optuna.samplers import TPESampler
-from optuna.visualization import plot_parallel_coordinate, plot_param_importances, plot_optimization_history, plot_slice
+from optuna.visualization import plot_parallel_coordinate, plot_param_importances, plot_optimization_history, plot_edf, plot_timeline, plot_contour
 
 from config import BaseConfig, config
 from utils.common import split_data, train_vae
@@ -29,17 +29,6 @@ def _suggest_conv_vae(trial: optuna.trial.Trial):
     base_cfg.HIDDEN_DIM_1 = channel_1 * channel_2_multiplier * channel_3_multiplier
     base_cfg.LATENT_DIM   = trial.suggest_categorical("LATENT_DIM", [16, 32, 64])
 
-    from models.encoders.conv_encoder import Encoder
-    temp_encoder = Encoder(layer_params={
-        "input_height":      base_cfg.INPUT_HEIGHT,
-        "input_width":       base_cfg.INPUT_WIDTH,
-        "intermediate_dims": [base_cfg.HIDDEN_DIM_1, base_cfg.HIDDEN_DIM_2, base_cfg.HIDDEN_DIM_3],
-        "latent_dim":        base_cfg.LATENT_DIM
-    })
-
-    if temp_encoder.flattened_size > 50000:
-        raise optuna.exceptions.TrialPruned()
-
     return base_cfg
 
 def _suggest_beta_vae(trial: optuna.trial.Trial):
@@ -51,7 +40,20 @@ def _suggest_cvae(trial: optuna.trial.Trial):
 def _suggest_shared_parameters(trial: optuna.trial.Trial, base_cfg: BaseConfig):
     base_cfg.LR = trial.suggest_float("LR", 1e-4, 1e-3, log=True)
     base_cfg.BATCH_SIZE = trial.suggest_categorical("BATCH_SIZE", [16, 32, 64])
-    # base_cfg.SHUFFLE = trial.suggest_categorical("shuffle", [True, False])
+    
+    if base_cfg.BETA_CHOICE == "tunable":
+        base_cfg.BETA = trial.suggest_categorical("BETA", [1.0, 2.0, 3.0, 4.0, 5.0])
+        
+    from models.encoders.conv_encoder import Encoder
+    temp_encoder = Encoder(layer_params={
+        "input_height":      base_cfg.INPUT_HEIGHT,
+        "input_width":       base_cfg.INPUT_WIDTH,
+        "intermediate_dims": [base_cfg.HIDDEN_DIM_1, base_cfg.HIDDEN_DIM_2, base_cfg.HIDDEN_DIM_3],
+        "latent_dim":        base_cfg.LATENT_DIM
+    })
+
+    if temp_encoder.flattened_size > 50000:
+        raise optuna.exceptions.TrialPruned()
     
     return base_cfg
 
@@ -85,31 +87,48 @@ def make_objective_function(model_type, dataset, device=None, epochs=config.EPOC
             test_loader=test_loader,
             optimizer=optimizer,
             epochs=epochs, 
+            annealing_epochs=trial_cfg.ANNEALING_EPOCHS,
             beta=trial_cfg.BETA,
+            beta_type=trial_cfg.BETA_TYPE,
             device=device,
             trial_i=trial.number
         )
         
         last_test_recon = history["test_recon"][-1]
         last_test_kl = history["test_kl"][-1]
-        last_total = history["test_total"][-1]
+        # last_total = history["test_total"][-1]
         
-        if np.isnan(last_test_recon) or np.isnan(last_test_kl) or np.isnan(last_total):
+        if np.isnan(last_test_recon) or np.isnan(last_test_kl):
             return float(1e6)
         
-        # return 0.6 * last_test_recon + 0.4 * last_test_kl
-        return last_total
+        # if trial_cfg.BETA_TYPE == "fixed" else last_total
+        return 0.6 * last_test_recon + 0.4 * last_test_kl 
     
     return objective
 
-def run_tuning(model_type, dataset, device=None, epochs=config.EPOCHS, trials=config.TRIALS):
+def run_tuning(model_type, dataset, device=None, epochs=config.EPOCHS, trials=config.TRIALS, root=Path(".")):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
+    # clearing trials plots dir for this study
+    trial_plots_dir = root / config.RESULT_DIR / ("trials/plots/")
+    print(trial_plots_dir)          # verify the path is what you expect
+    print(trial_plots_dir.exists()) # verify it's actually finding the directory
+    if trial_plots_dir.exists():
+        print("Creating fresh trials directory...")
+        shutil.rmtree(trial_plots_dir)
+        
+    study_name = {
+        "basic": "Basic VAE",
+        "conv":  "Convolutional VAE",
+        "beta":  "Beta VAE",
+        "cvae":  "Conditional VAE"
+    }.get(model_type, model_type)
+
     study = optuna.create_study(
         direction="minimize",
-        sampler=TPESampler(seed=42),
-        study_name=f"{"Basic VAE" if model_type == "basic" else "Convolutional VAE" if model_type == "conv" else "Beta VAE" if model_type == "beta" else "Conditional VAE"} Tuning"
+        sampler=TPESampler(seed=42, multivariate=True),
+        study_name=f"{study_name} Tuning",
     )
     
     study.optimize(
@@ -120,14 +139,29 @@ def run_tuning(model_type, dataset, device=None, epochs=config.EPOCHS, trials=co
             epochs=epochs
         ),
         n_trials=trials,
+        gc_after_trial=True,
         show_progress_bar=True
     )
     
-    plot_parallel_coordinate(study=study).show()
-    plot_param_importances(study=study).show()
-    plot_optimization_history(study=study).show()
-    plot_slice(study=study).show()
+    save_study_plots(study=study, model_type=model_type)
     
     return study
         
-        
+def save_study_plots(study: optuna.Study, model_type: str, root: Path=Path(".")):
+    """Save informative Optuna study plots to results/trials/plots/<model_type>/"""
+    plots_dir = root / config.RESULT_DIR / "trials" / "plots" / model_type
+    os.makedirs(plots_dir, exist_ok=True)
+
+    plots = {
+        "optimization_history":  plot_optimization_history(study),
+        "param_importances":     plot_param_importances(study),
+        "parallel_coordinate":   plot_parallel_coordinate(study),
+        "edf":                   plot_edf(study),
+        "timeline":              plot_timeline(study),
+        "contour":              plot_contour(study)
+    }
+
+    for name, fig in plots.items():
+        path = str(plots_dir / f"{name}.html")
+        fig.write_html(path)
+        print(f"Saved: {path}")

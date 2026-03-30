@@ -28,15 +28,23 @@ def loader_to_numpy(loader):
     
 # TODO: more complex annealing: https://github.com/hubertrybka/vae-annealing
 # annealing starts at 0.1 and is capped at beta
-def vae_loss(x_hat, x, mu, logvar, epoch, beta=1.0, beta_type="fixed"):
+def vae_loss(x_hat, x, mu, logvar, epoch, beta_params):
+    beta = beta_params.get("beta", 1.0)
+    beta_type = beta_params.get("beta_type", "fixed")
+    
+    if beta_type == "annealing":
+        annealing_epochs = beta_params.get("annealing_epochs", None)
+        epoch = epoch if annealing_epochs is None else annealing_epochs
+        beta = min(beta, (epoch + 1) / 10)
+    
     recon = F.mse_loss(x_hat, x, reduction="sum")
     kl = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-    beta = min(beta, (epoch + 1) / 10) if beta_type == "annealing" else beta
+    
     total = recon + beta * kl
     
     return total, recon, kl
 
-def train_one_epoch(model, loader, optimizer, epoch, beta=1.0, beta_type="fixed", device=None):
+def train_one_epoch(model, loader, optimizer, epoch, beta_params, device=None):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -50,7 +58,7 @@ def train_one_epoch(model, loader, optimizer, epoch, beta=1.0, beta_type="fixed"
         optimizer.zero_grad() 
         x_hat, mu, logvar = model(x)
         
-        loss, recon, kl = vae_loss(x_hat=x_hat, x=x, mu=mu, logvar=logvar, epoch=epoch, beta=beta, beta_type=beta_type)
+        loss, recon, kl = vae_loss(x_hat=x_hat, x=x, mu=mu, logvar=logvar, epoch=epoch, beta_params=beta_params)
         
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -71,7 +79,7 @@ def train_one_epoch(model, loader, optimizer, epoch, beta=1.0, beta_type="fixed"
         "kl": train_kl
     }
     
-def evaluate_one_epoch(model, loader, epoch, beta=1.0, beta_type="fixed", device=None):
+def evaluate_one_epoch(model, loader, epoch, beta_params, device=None):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -84,7 +92,7 @@ def evaluate_one_epoch(model, loader, epoch, beta=1.0, beta_type="fixed", device
             if len(x.shape) == 3: x = x.unsqueeze(1) # for convVAE, channel has to be included?          
             x_hat, mu, logvar = model(x)
             
-            loss, recon, kl = vae_loss(x_hat=x_hat, x=x, mu=mu, logvar=logvar, epoch=epoch, beta=beta, beta_type=beta_type)
+            loss, recon, kl = vae_loss(x_hat=x_hat, x=x, mu=mu, logvar=logvar, epoch=epoch, beta_params=beta_params)
             
             total_sum += loss.item()
             recon_sum += recon.item()
@@ -101,16 +109,22 @@ def evaluate_one_epoch(model, loader, epoch, beta=1.0, beta_type="fixed", device
         "kl": test_kl
     }
     
-def train_vae(model: VAE, train_loader, test_loader, optimizer, epochs, beta=1.0, beta_type="fixed", device=None, trial_i=None):
+def train_vae(model: VAE, train_loader, test_loader, optimizer, epochs, annealing_epochs, beta=1.0, beta_type="fixed", device=None, trial_i=None, root: Path=Path(".")):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+    beta_params = {
+        "beta": beta,
+        "beta_type": beta_type,
+        "annealing_epochs": annealing_epochs
+    }
 
     history = {"train_total": [], "test_total": [],
                "train_recon": [], "test_recon": [],
                "train_kl": [], "test_kl": []}
     for epoch in range(epochs):
-        train_stats = train_one_epoch(model=model, loader=train_loader, optimizer=optimizer, epoch=epoch, beta=beta, beta_type=beta_type, device=device)
-        test_stats = evaluate_one_epoch(model=model, loader=test_loader, epoch=epoch, beta=beta, beta_type=beta_type, device=device)
+        train_stats = train_one_epoch(model=model, loader=train_loader, optimizer=optimizer, epoch=epoch, beta_params=beta_params, device=device)
+        test_stats = evaluate_one_epoch(model=model, loader=test_loader, epoch=epoch, beta_params=beta_params, device=device)
         train_total = train_stats["loss"]
         test_total = test_stats["loss"]
         train_recon = train_stats["recon"]
@@ -138,9 +152,11 @@ def train_vae(model: VAE, train_loader, test_loader, optimizer, epochs, beta=1.0
     
     if trial_i is not None:
         plot_title = f"{plot_title}_trial_{trial_i + 1}" 
-        plots_dir = config.RESULT_DIR / Path("trials/plots/")
+        plots_dir = root / config.RESULT_DIR / Path("trials/plots/")
     
-    else: plots_dir = config.RESULT_DIR / Path("final/plots/")
+    else: plots_dir = root / config.RESULT_DIR / Path("final/plots/")
+    
+    
         
     plots_dir.mkdir(parents=True, exist_ok=True)
     file_name = plots_dir / f"{plot_title}.png"
@@ -188,9 +204,9 @@ def create_new_config(best_params: dict):
     
     return cfg
 
-def save_result_to_csv(study=None, history=None, model_name=None, save_dir=config.RESULT_DIR):
-    trial_dir = save_dir / Path("trials")
-    final_dir = save_dir / Path("final")
+def save_result_to_csv(study=None, history=None, model_name=None, save_dir=config.RESULT_DIR, root: Path=Path(".")):
+    trial_dir = root / save_dir / Path("trials")
+    final_dir = root / save_dir / Path("final")
     trial_dir.mkdir(parents=True, exist_ok=True)
     final_dir.mkdir(parents=True, exist_ok=True)
     
@@ -238,12 +254,12 @@ def extract_latents_with_names(model, loader, device=None):
             
     return np.concatenate(latents,axis=0), names
 
-def combine_audio_and_lyrics(latent_vecs, audio_names):
+def combine_audio_and_lyrics(latent_vecs, audio_names, root: Path=Path(".")):
     hybrid = []
     for i, full_name in enumerate(audio_names):
         parent_stem = str(Path(full_name).stem).split("_")[0]
         z_audio = latent_vecs[i]
-        embeddings_path = config.EMBEDDINGS_DIR / f"{parent_stem}.npy"
+        embeddings_path = root / config.EMBEDDINGS_DIR / f"{parent_stem}.npy"
                 
         if embeddings_path.exists():
             z_text = np.load(embeddings_path)

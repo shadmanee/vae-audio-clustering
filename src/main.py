@@ -8,7 +8,7 @@ from utils.common import extract_latents, extract_latents_with_names, combine_au
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def solve_easy():
-    basic_vae, latent_dim, train_loader, test_loader, vae_history = run_VAE(model_type="basic") #type: ignore
+    basic_vae, latent_dim, train_loader, test_loader, vae_history, _ = run_VAE(model_type="basic") #type: ignore
     pca_baseline, pca_history = run_PCA(n_components=latent_dim, train_loader=train_loader, test_loader=test_loader)
     
     vae_latents = np.concatenate([
@@ -27,7 +27,7 @@ def solve_easy():
     return vae_history, pca_history, vae_metrics, pca_metrics
 
 def solve_medium():
-    conv_vae, latent_dim, train_loader, test_loader, vae_history = run_VAE(model_type="conv")
+    conv_vae, latent_dim, train_loader, test_loader, vae_history, _ = run_VAE(model_type="conv")
     pca_baseline, pca_history = run_PCA(n_components=latent_dim, train_loader=train_loader, test_loader=test_loader)
     
     train_vae_latents, audio_names1 = extract_latents_with_names(model=conv_vae, loader=train_loader)
