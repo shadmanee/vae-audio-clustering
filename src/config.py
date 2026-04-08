@@ -9,6 +9,7 @@ class BaseConfig:
     LYRICS_DIR_EN = Path("data/lyrics/en")
     EMBEDDINGS_DIR = Path("data/embeddings")
     RESULT_DIR = Path("results")
+    METADATA_DIR = Path("data/metadata")
 
     DEBUG = False
 
@@ -28,8 +29,8 @@ class BaseConfig:
     INPUT_DIM = INPUT_HEIGHT * INPUT_WIDTH
     
     # general user defined (fixed) parameters
-    EPOCHS = 2
-    TRIALS = 2
+    EPOCHS = 3
+    TRIALS = 3
     SHUFFLE = True
     # anneal over first 20% of total epochs
     ANNEALING_EPOCHS = int(0.2 * EPOCHS)

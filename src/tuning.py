@@ -28,6 +28,18 @@ def _suggest_conv_vae(trial: optuna.trial.Trial):
     base_cfg.HIDDEN_DIM_2 = channel_1 * channel_2_multiplier
     base_cfg.HIDDEN_DIM_1 = channel_1 * channel_2_multiplier * channel_3_multiplier
     base_cfg.LATENT_DIM   = trial.suggest_categorical("LATENT_DIM", [16, 32, 64])
+    
+    from models.encoders.conv_encoder import Encoder
+    temp_encoder = Encoder(layer_params={
+        "input_height":      base_cfg.INPUT_HEIGHT,
+        "input_width":       base_cfg.INPUT_WIDTH,
+        "intermediate_dims": [base_cfg.HIDDEN_DIM_1, base_cfg.HIDDEN_DIM_2, base_cfg.HIDDEN_DIM_3],
+        "latent_dim":        base_cfg.LATENT_DIM
+    })
+
+    if temp_encoder.flattened_size > 50000:
+        print(f"Pruning — flattened_size={temp_encoder.flattened_size}")
+        raise optuna.exceptions.TrialPruned()
 
     return base_cfg
 
@@ -43,17 +55,6 @@ def _suggest_shared_parameters(trial: optuna.trial.Trial, base_cfg: BaseConfig):
     
     if base_cfg.BETA_CHOICE == "tunable":
         base_cfg.BETA = trial.suggest_categorical("BETA", [1.0, 2.0, 3.0, 4.0, 5.0])
-        
-    from models.encoders.conv_encoder import Encoder
-    temp_encoder = Encoder(layer_params={
-        "input_height":      base_cfg.INPUT_HEIGHT,
-        "input_width":       base_cfg.INPUT_WIDTH,
-        "intermediate_dims": [base_cfg.HIDDEN_DIM_1, base_cfg.HIDDEN_DIM_2, base_cfg.HIDDEN_DIM_3],
-        "latent_dim":        base_cfg.LATENT_DIM
-    })
-
-    if temp_encoder.flattened_size > 50000:
-        raise optuna.exceptions.TrialPruned()
     
     return base_cfg
 
@@ -61,10 +62,10 @@ SEARCH_SPACES = {
     "basic": _suggest_basic_vae,
     "conv": _suggest_conv_vae,
     "beta": _suggest_beta_vae,
-    "cvae": _suggest_cvae
+    "cvae": _suggest_basic_vae # TODO: UPDATE FOR CONDITIONAL VAE IF NEEDED
 }
 
-def make_objective_function(model_type, dataset, device=None, epochs=config.EPOCHS):
+def make_objective_function(model_type, dataset, num_classes=0, device=None, epochs=config.EPOCHS):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
@@ -77,7 +78,9 @@ def make_objective_function(model_type, dataset, device=None, epochs=config.EPOC
         
         train_loader, test_loader = split_data(dataset=dataset, ratio=0.8, batch_size=trial_cfg.BATCH_SIZE, shuffle=config.SHUFFLE)
         
-        model = VAE(cfg=trial_cfg, model_type=model_type).to(device=device)
+        # print("="*20, f"\n{next(iter(train_loader))}\n", "="*20)
+        
+        model = VAE(cfg=trial_cfg, model_type=model_type, num_classes=num_classes).to(device=device)
         
         optimizer = optim.Adam(model.parameters(), lr=trial_cfg.LR)
         
@@ -106,14 +109,14 @@ def make_objective_function(model_type, dataset, device=None, epochs=config.EPOC
     
     return objective
 
-def run_tuning(model_type, dataset, device=None, epochs=config.EPOCHS, trials=config.TRIALS, root=Path(".")):
+def run_tuning(model_type, dataset, num_classes=0, device=None, epochs=config.EPOCHS, trials=config.TRIALS, root=Path(".")):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
     # clearing trials plots dir for this study
     trial_plots_dir = root / config.RESULT_DIR / ("trials/plots/")
-    print(trial_plots_dir)          # verify the path is what you expect
-    print(trial_plots_dir.exists()) # verify it's actually finding the directory
+    # print(trial_plots_dir)          # verify the path is what you expect
+    # print(trial_plots_dir.exists()) # verify it's actually finding the directory
     if trial_plots_dir.exists():
         print("Creating fresh trials directory...")
         shutil.rmtree(trial_plots_dir)
@@ -135,6 +138,7 @@ def run_tuning(model_type, dataset, device=None, epochs=config.EPOCHS, trials=co
         func=make_objective_function(
             model_type=model_type,
             dataset=dataset,
+            num_classes=num_classes,
             device=device,
             epochs=epochs
         ),

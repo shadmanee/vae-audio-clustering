@@ -3,12 +3,13 @@ from pathlib import Path
 import torch
 import torch.optim as optim
 
+import pandas as pd
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
 from yellowbrick.cluster import KElbowVisualizer
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 
 from config import config
-from datasets import AudioSpectrogramDataset
+from datasets import AudioSpectrogramDataset, AudioSpectogramGenreDataset
 from utils.common import split_data, train_vae, create_new_config, save_result_to_csv
 from utils.clustering import _save_elbow_plot, _save_silhouette_plot, _append_metrics_to_csv
 from models.vae import VAE
@@ -17,12 +18,19 @@ from tuning import run_tuning
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def run_VAE(model_type: str, root: Path=Path(".")):
-    npy_dir = root / config.FEATURES_DIR
-    dataset = AudioSpectrogramDataset(dataset_dir=npy_dir)
+def run_VAE(model_type: str, root: Path=Path("."), features_dir=config.FEATURES_DIR):
+    npy_dir = root / features_dir
+    num_labels = 0
+    if model_type == "cvae":
+        df_meta_path = root / config.METADATA_DIR / "metadata_en.csv" # "metadata_popular_en.csv" if considering only genres that appear > 10x
+        labeled_df = pd.read_csv(df_meta_path)
+        num_labels = len(labeled_df["label"].unique())
+        dataset = AudioSpectogramGenreDataset(dataset_dir=npy_dir, labeled_df=labeled_df)
+    else:
+        dataset = AudioSpectrogramDataset(dataset_dir=npy_dir)
     
     # hyperparameter tuning
-    tuning_study = run_tuning(model_type=model_type, dataset=dataset, device=device, epochs=config.EPOCHS, trials=config.TRIALS, root=root)
+    tuning_study = run_tuning(model_type=model_type, dataset=dataset, num_classes=num_labels, device=device, epochs=config.EPOCHS, trials=config.TRIALS, root=root)
 
     print(f"Best trial for `{model_type}`:\nScore: {tuning_study.best_trial.value:.4f}")
     for k, v in tuning_study.best_trial.params.items():
@@ -34,7 +42,7 @@ def run_VAE(model_type: str, root: Path=Path(".")):
     
     train_loader, test_loader = split_data(dataset=dataset, ratio=0.8, batch_size=best_trial_cfg.BATCH_SIZE, shuffle=config.SHUFFLE)
 
-    vae = VAE(cfg=best_trial_cfg, model_type=model_type).to(device)
+    vae = VAE(cfg=best_trial_cfg, model_type=model_type, num_classes=num_labels).to(device)
     print("\n\nFINAL MODEL:\n", "="*20, "\n", vae, "\n", "="*20, "\n\n\n")
     
     optimizer = optim.Adam(vae.parameters(), lr=best_trial_cfg.LR)
@@ -65,6 +73,8 @@ def run_PCA(n_components, train_loader, test_loader=None, root=Path(".")):
 def run_KMeans(latent_vecs, model_type, root: Path=Path(".")):
     save_dir = root / config.RESULT_DIR / Path(f"clustering/{model_type}")
     save_dir.mkdir(parents=True, exist_ok=True)
+    
+    print(save_dir.exists())
     
     elbow_model = KMeans(init='k-means++', random_state=0, n_init=10)
     visualizer = KElbowVisualizer(elbow_model, k=(2, 12), timings=True, force_model=True) # type: ignore

@@ -52,11 +52,18 @@ def train_one_epoch(model, loader, optimizer, epoch, beta_params, device=None):
     model.train()
     total_sum = recon_sum = kl_sum = n = 0
     
-    for x, _ in loader:              
+    for x, y in loader:              
         x = x.to(device)
+        if model.model_type == "cvae":
+            y = y.to(device)
+            y = F.one_hot(y, num_classes=model.num_classes).float().to(device)
         if len(x.shape) == 3: x = x.unsqueeze(1) # for convVAE, channel has to be included?         
         optimizer.zero_grad() 
-        x_hat, mu, logvar = model(x)
+        
+        if model.model_type == "cvae":
+            x_hat, mu, logvar = model(x, y)
+        else:
+            x_hat, mu, logvar = model(x)
         
         loss, recon, kl = vae_loss(x_hat=x_hat, x=x, mu=mu, logvar=logvar, epoch=epoch, beta_params=beta_params)
         
@@ -87,10 +94,17 @@ def evaluate_one_epoch(model, loader, epoch, beta_params, device=None):
     total_sum = recon_sum = kl_sum = n = 0
 
     with torch.no_grad():
-        for x, _ in loader:              
+        for x, y in loader:              
             x = x.to(device)
+            if model.model_type == "cvae":
+                y = y.to(device)
+                y = F.one_hot(y, num_classes=model.num_classes).float().to(device)
             if len(x.shape) == 3: x = x.unsqueeze(1) # for convVAE, channel has to be included?          
-            x_hat, mu, logvar = model(x)
+            
+            if model.model_type == "cvae":
+                x_hat, mu, logvar = model(x, y)
+            else:
+                x_hat, mu, logvar = model(x)
             
             loss, recon, kl = vae_loss(x_hat=x_hat, x=x, mu=mu, logvar=logvar, epoch=epoch, beta_params=beta_params)
             
@@ -220,22 +234,43 @@ def save_result_to_csv(study=None, history=None, model_name=None, save_dir=confi
         history_path = final_dir / f"{model_name}_training_history.csv"
         df_history.to_csv(history_path, index_label="epoch")
         
+# def extract_latents(model, loader, device=None):
+#     if device is None:
+#         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+#     model.eval()
+#     latents = []
+#     with torch.no_grad():
+#         for x, y in loader:
+#             x = x.to(device)
+#             mu, _ = model.encoder(x)
+#             latents.append(mu.cpu().numpy())
+            
+#     return np.concatenate(latents)
+
 def extract_latents(model, loader, device=None):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
     model.eval()
     latents = []
-    names = []
-    
+    labels = []
+
     with torch.no_grad():
-        for x, filenames in loader:
+        for x, y in loader:
             x = x.to(device)
-            mu, _ = model.encoder(x)
+            # if len(x.shape) == 3:
+            #     x = x.unsqueeze(1)  # (batch, 64, 91) → (batch, 1, 64, 91) for conv
+
+            y_conditional = None
+            if model.is_conditional:
+                y = y.long().to(device)
+                y_conditional = F.one_hot(y, num_classes=model.num_classes).float().to(device)
+
+            mu, _ = model.encoder(x, y_conditional)
             latents.append(mu.cpu().numpy())
-            names.extend(filenames)
-            
-    return np.concatenate(latents)
+            labels.append(y.cpu().numpy())
+
+    return np.concatenate(latents), np.concatenate(labels)
 
 # DIFFERENT FROM THE PREVIOUS EASY TASK FUNCTION
 def extract_latents_with_names(model, loader, device=None):
