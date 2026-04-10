@@ -11,8 +11,10 @@ def main():
     bn_audio_list = [p for p in config.RAW_AUDIO_DIR_BN.iterdir() if p.is_file() and p.suffix.lower() == ".wav"]
     audio_list = en_audio_list + bn_audio_list
     # audio_list = en_audio_list
-    audio_list = random.sample(audio_list, config.N_SUBSET) if config.N_SUBSET is not None else audio_list
-
+    
+    #  audios -> clips -> randomly sampling n_subset -> feature extract
+    #  5 audios -> 50 clips, 10 clips eaach -> randomly smaple -> diff n of clips -> features diff n
+    
     for audio_path in audio_list:
         try:
             spec = extract_mel_spectrogram(audio_path)

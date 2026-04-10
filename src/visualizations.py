@@ -203,7 +203,7 @@ def plot_tsne_clustering_comparison(
             ax=ax,
             embedding=tsne_results,
             labels=np.asarray(labels),
-            title=f"t-SNE  –  {title}  (audio + lyrics)",
+            title=f"t-SNE  –  {title}",
             silhouette=score,
         )
         ax.set_xlabel("t-SNE 1")

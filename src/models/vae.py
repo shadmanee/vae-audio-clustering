@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 from config import BaseConfig
 
-
 class VAE(nn.Module):
     def __init__(self, cfg: BaseConfig, num_classes=0, model_type="basic"):
         super().__init__()
@@ -14,27 +13,40 @@ class VAE(nn.Module):
         intermediate_dims = [self.config.HIDDEN_DIM_1, self.config.HIDDEN_DIM_2]
 
         if self.model_type == "basic":
+            # UNAFFECTED BY VAE_TYPE
             from .encoders.vanilla_encoder import Encoder
             from .decoders.vanilla_decoder import Decoder
 
         elif self.model_type == "conv":
+            # UNAFFECTED BY VAE_TYPE
             from .encoders.conv_encoder import Encoder
             from .decoders.conv_decoder import Decoder
             intermediate_dims.append(self.config.HIDDEN_DIM_3)
 
         elif self.model_type == "beta":
             # Same architecture as basic, different beta in loss — handled in training
-            from .encoders.vanilla_encoder import Encoder
-            from .decoders.vanilla_decoder import Decoder
+            if self.config.VAE_TYPE == "basic":
+                from .encoders.vanilla_encoder import Encoder
+                from .decoders.vanilla_decoder import Decoder
+            else:
+                from .encoders.conv_encoder import Encoder
+                from .decoders.conv_decoder import Decoder
 
         elif self.model_type == "cvae":
-            # TODO: have to update convolutional VAE encoder and decoder classes to use them here
-            from .encoders.vanilla_encoder import Encoder
-            from .decoders.vanilla_decoder import Decoder
+            if self.config.VAE_TYPE == "basic":
+                from .encoders.vanilla_encoder import Encoder
+                from .decoders.vanilla_decoder import Decoder
+            else:
+                from .encoders.conv_encoder import Encoder
+                from .decoders.conv_decoder import Decoder
+                
+        elif self.model_type == "ae": # autoencoder baseline
+            from .encoders.conv_encoder import Encoder
+            from .decoders.conv_decoder import Decoder
 
         else:
             raise ValueError(f"'{self.model_type}' is not a valid model type. "
-                             f"Choose from: 'basic', 'conv', 'beta', 'cvae'.")
+                             f"Choose from: 'basic', 'conv', 'beta', 'cvae' or 'ae'.")
 
         layer_params = {
             "input_height":      self.config.INPUT_HEIGHT,
@@ -58,7 +70,10 @@ class VAE(nn.Module):
 
     def forward(self, x, y=None):
         mu, logvar = self.encoder(x, y)
-        z = self.reparameterize(mu, logvar)
+        if self.model_type == "ae":
+            z = mu  # deterministic — skip reparameterization
+        else:
+            z = self.reparameterize(mu, logvar)
         return self.decoder(z, y), mu, logvar
 
 

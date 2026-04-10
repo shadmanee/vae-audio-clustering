@@ -42,12 +42,22 @@ class PCABaseline:
 
         return self
 
-    def transform(self, loader):
-        """Project data into PCA space using the fitted fixed PCA."""
+    def transform(self, loader, return_names=False):
+        """Project data into PCA space. Optionally return audio names for lyrics combination."""
         self._check_fitted()
-        X = loader_to_numpy(loader=loader)
-        
-        return self.pca_fixed.transform(X)
+        X, names = [], []
+
+        for batch in loader:
+            x, paths, _ = batch  # unpack 3-tuple, ignore labels
+            X.append(x.numpy().reshape(len(x), -1))
+            names.extend(paths)
+
+        X = np.concatenate(X, axis=0)
+        latents = self.pca_fixed.transform(X)
+
+        if return_names:
+            return latents, names
+        return latents
 
     def reconstruct(self, loader):
         """Transform then inverse transform for reconstruction comparison with VAE."""

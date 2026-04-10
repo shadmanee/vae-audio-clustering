@@ -13,7 +13,7 @@ def _suggest_basic_vae(trial: optuna.trial.Trial):
 
     base_cfg.HIDDEN_DIM_1 = trial.suggest_categorical("HIDDEN_DIM_1", [512, 1024, 2048])
     base_cfg.HIDDEN_DIM_2 = trial.suggest_categorical("HIDDEN_DIM_2", [128, 256, 512])
-    base_cfg.LATENT_DIM = trial.suggest_categorical("LATENT_DIM", [26, 32, 64])
+    base_cfg.LATENT_DIM = trial.suggest_categorical("LATENT_DIM", [16, 32, 64])
 
     return base_cfg
 
@@ -47,7 +47,9 @@ def _suggest_beta_vae(trial: optuna.trial.Trial):
     pass
 
 def _suggest_cvae(trial: optuna.trial.Trial):
-    pass
+    if config.VAE_TYPE == "basic": 
+        return _suggest_basic_vae(trial=trial)
+    return _suggest_conv_vae(trial=trial)
 
 def _suggest_shared_parameters(trial: optuna.trial.Trial, base_cfg: BaseConfig):
     base_cfg.LR = trial.suggest_float("LR", 1e-4, 1e-3, log=True)
@@ -62,10 +64,11 @@ SEARCH_SPACES = {
     "basic": _suggest_basic_vae,
     "conv": _suggest_conv_vae,
     "beta": _suggest_beta_vae,
-    "cvae": _suggest_basic_vae # TODO: UPDATE FOR CONDITIONAL VAE IF NEEDED
+    "cvae": _suggest_cvae,
+    "ae": _suggest_conv_vae
 }
 
-def make_objective_function(model_type, dataset, num_classes=0, device=None, epochs=config.EPOCHS):
+def make_objective_function(model_type, dataset, plot_dir_name=config.MODEL_TYPE, num_classes=0, device=None, epochs=config.EPOCHS, root=Path(".")):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
@@ -82,6 +85,8 @@ def make_objective_function(model_type, dataset, num_classes=0, device=None, epo
         
         model = VAE(cfg=trial_cfg, model_type=model_type, num_classes=num_classes).to(device=device)
         
+        # print("="*20, f"\n{model}\n", "="*20)
+        
         optimizer = optim.Adam(model.parameters(), lr=trial_cfg.LR)
         
         history = train_vae(
@@ -94,7 +99,9 @@ def make_objective_function(model_type, dataset, num_classes=0, device=None, epo
             beta=trial_cfg.BETA,
             beta_type=trial_cfg.BETA_TYPE,
             device=device,
-            trial_i=trial.number
+            trial_i=trial.number,
+            plot_model_dir_name=plot_dir_name,
+            root=root
         )
         
         last_test_recon = history["test_recon"][-1]
@@ -109,12 +116,12 @@ def make_objective_function(model_type, dataset, num_classes=0, device=None, epo
     
     return objective
 
-def run_tuning(model_type, dataset, num_classes=0, device=None, epochs=config.EPOCHS, trials=config.TRIALS, root=Path(".")):
+def run_tuning(model_type, dataset, plot_dir_name=config.MODEL_TYPE, num_classes=0, device=None, epochs=config.EPOCHS, trials=config.TRIALS, root=Path(".")):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
     # clearing trials plots dir for this study
-    trial_plots_dir = root / config.RESULT_DIR / ("trials/plots/")
+    trial_plots_dir = root / config.RESULT_DIR / "trials" / plot_dir_name
     # print(trial_plots_dir)          # verify the path is what you expect
     # print(trial_plots_dir.exists()) # verify it's actually finding the directory
     if trial_plots_dir.exists():
@@ -125,7 +132,8 @@ def run_tuning(model_type, dataset, num_classes=0, device=None, epochs=config.EP
         "basic": "Basic VAE",
         "conv":  "Convolutional VAE",
         "beta":  "Beta VAE",
-        "cvae":  "Conditional VAE"
+        "cvae":  "Conditional VAE",
+        "ae": "Convolutional AutoEncoder"
     }.get(model_type, model_type)
 
     study = optuna.create_study(
@@ -138,23 +146,27 @@ def run_tuning(model_type, dataset, num_classes=0, device=None, epochs=config.EP
         func=make_objective_function(
             model_type=model_type,
             dataset=dataset,
+            plot_dir_name=plot_dir_name,
             num_classes=num_classes,
             device=device,
-            epochs=epochs
+            epochs=epochs,
+            root=root
         ),
         n_trials=trials,
         gc_after_trial=True,
         show_progress_bar=True
     )
     
-    save_study_plots(study=study, model_type=model_type)
+    save_study_plots(study=study, plot_dir_name=plot_dir_name, root=root)
     
     return study
         
-def save_study_plots(study: optuna.Study, model_type: str, root: Path=Path(".")):
+def save_study_plots(study: optuna.Study, plot_dir_name: str, root: Path=Path(".")):
     """Save informative Optuna study plots to results/trials/plots/<model_type>/"""
-    plots_dir = root / config.RESULT_DIR / "trials" / "plots" / model_type
-    os.makedirs(plots_dir, exist_ok=True)
+    plots_dir = root / config.RESULT_DIR / "trials" / plot_dir_name / "plots"
+    plots_dir.mkdir(exist_ok=True, parents=True)
+    
+    print(plots_dir)
 
     plots = {
         "optimization_history":  plot_optimization_history(study),

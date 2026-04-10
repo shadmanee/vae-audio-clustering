@@ -30,8 +30,8 @@ def solve_medium():
     conv_vae, latent_dim, train_loader, test_loader, vae_history, _ = run_VAE(model_type="conv")
     pca_baseline, pca_history = run_PCA(n_components=latent_dim, train_loader=train_loader, test_loader=test_loader)
     
-    train_vae_latents, audio_names1 = extract_latents_with_names(model=conv_vae, loader=train_loader)
-    test_vae_latents, audio_names2 = extract_latents_with_names(model=conv_vae, loader=test_loader)
+    train_vae_latents, _, audio_names1 = extract_latents_with_names(model=conv_vae, loader=train_loader)
+    test_vae_latents, _, audio_names2 = extract_latents_with_names(model=conv_vae, loader=test_loader)
     
     latent_vecs = np.concatenate([train_vae_latents, test_vae_latents], axis=0)
     audio_names = np.concatenate([audio_names1, audio_names2], axis=0)

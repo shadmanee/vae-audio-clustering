@@ -5,8 +5,10 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, random_split
 
+from sentence_transformers import SentenceTransformer
+
 from typing import Tuple
-from config import config, BaseConfig
+from config import BaseConfig, config
 
 import matplotlib.pyplot as plt, numpy as np, pandas as pd, os
 
@@ -22,7 +24,7 @@ def split_data(dataset, ratio=0.8, batch_size=32, shuffle=True) -> Tuple[DataLoa
 
 def loader_to_numpy(loader):
     xs = []
-    for x,_ in loader:
+    for x, filename, y in loader:
         xs.append(x.view(x.size(0), -1).numpy())
     return np.concatenate(xs)
     
@@ -38,6 +40,11 @@ def vae_loss(x_hat, x, mu, logvar, epoch, beta_params):
         beta = min(beta, (epoch + 1) / 10)
     
     recon = F.mse_loss(x_hat, x, reduction="sum")
+    
+    # Skip KL entirely if mu/logvar are None (autoencoder case)
+    if mu is None or logvar is None:
+        return recon, recon, torch.tensor(0.0)
+    
     kl = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
     
     total = recon + beta * kl
@@ -48,11 +55,10 @@ def train_one_epoch(model, loader, optimizer, epoch, beta_params, device=None):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    if config.DEBUG: print(f"Training epoch {epoch + 1}...")
     model.train()
     total_sum = recon_sum = kl_sum = n = 0
     
-    for x, y in loader:              
+    for x, filenames, y in loader:              
         x = x.to(device)
         if model.model_type == "cvae":
             y = y.to(device)
@@ -94,7 +100,7 @@ def evaluate_one_epoch(model, loader, epoch, beta_params, device=None):
     total_sum = recon_sum = kl_sum = n = 0
 
     with torch.no_grad():
-        for x, y in loader:              
+        for x, filenames, y in loader:              
             x = x.to(device)
             if model.model_type == "cvae":
                 y = y.to(device)
@@ -123,7 +129,7 @@ def evaluate_one_epoch(model, loader, epoch, beta_params, device=None):
         "kl": test_kl
     }
     
-def train_vae(model: VAE, train_loader, test_loader, optimizer, epochs, annealing_epochs, beta=1.0, beta_type="fixed", device=None, trial_i=None, root: Path=Path(".")):
+def train_vae(model: VAE, train_loader, test_loader, optimizer, epochs, annealing_epochs, beta=1.0, beta_type="fixed", device=None, trial_i=None, plot_model_dir_name=config.MODEL_TYPE, root: Path=Path(".")):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
@@ -166,11 +172,9 @@ def train_vae(model: VAE, train_loader, test_loader, optimizer, epochs, annealin
     
     if trial_i is not None:
         plot_title = f"{plot_title}_trial_{trial_i + 1}" 
-        plots_dir = root / config.RESULT_DIR / Path("trials/plots/")
+        plots_dir = root / config.RESULT_DIR / "trials" / plot_model_dir_name / "plots"
     
-    else: plots_dir = root / config.RESULT_DIR / Path("final/plots/")
-    
-    
+    else: plots_dir = root / config.RESULT_DIR / "final" / plot_model_dir_name
         
     plots_dir.mkdir(parents=True, exist_ok=True)
     file_name = plots_dir / f"{plot_title}.png"
@@ -218,7 +222,7 @@ def create_new_config(best_params: dict):
     
     return cfg
 
-def save_result_to_csv(study=None, history=None, model_name=None, save_dir=config.RESULT_DIR, root: Path=Path(".")):
+def save_result_to_csv(study=None, history=None, model_name=config.MODEL_TYPE, save_dir=config.RESULT_DIR, root: Path=Path(".")):
     trial_dir = root / save_dir / Path("trials")
     final_dir = root / save_dir / Path("final")
     trial_dir.mkdir(parents=True, exist_ok=True)
@@ -226,12 +230,13 @@ def save_result_to_csv(study=None, history=None, model_name=None, save_dir=confi
     
     if study is not None:
         df: pd.DataFrame = study.trials_dataframe()
-        filepath = os.path.join(trial_dir, f"{model_name}_tuning_results.csv")
+        filepath = os.path.join(trial_dir, f"{model_name}/tuning_results.csv")
         df.to_csv(filepath, index=False)
     
     if history is not None:
         df_history = pd.DataFrame(history)
-        history_path = final_dir / f"{model_name}_training_history.csv"
+        (final_dir / model_name).mkdir(exist_ok=True, parents=True)
+        history_path = final_dir / model_name / "training_history.csv"
         df_history.to_csv(history_path, index_label="epoch")
         
 # def extract_latents(model, loader, device=None):
@@ -256,10 +261,10 @@ def extract_latents(model, loader, device=None):
     labels = []
 
     with torch.no_grad():
-        for x, y in loader:
+        for x, filenames, y in loader:
             x = x.to(device)
-            # if len(x.shape) == 3:
-            #     x = x.unsqueeze(1)  # (batch, 64, 91) → (batch, 1, 64, 91) for conv
+            if len(x.shape) == 3:
+                x = x.unsqueeze(1)  # (batch, 64, 91) → (batch, 1, 64, 91) for conv
 
             y_conditional = None
             if model.is_conditional:
@@ -273,21 +278,46 @@ def extract_latents(model, loader, device=None):
     return np.concatenate(latents), np.concatenate(labels)
 
 # DIFFERENT FROM THE PREVIOUS EASY TASK FUNCTION
+# def extract_latents_with_names(model, loader, device=None):
+#     if device is None:
+#         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#     model.eval()
+#     latents = []
+#     names = []
+#     with torch.no_grad():
+#         for x, filenames in loader:
+#             x = x.to(device)
+#             x = x.unsqueeze(1)
+#             mu, _ = model.encoder(x)
+#             latents.append(mu.cpu().numpy())
+#             names.extend(filenames)
+            
+#     return np.concatenate(latents,axis=0), names
+
 def extract_latents_with_names(model, loader, device=None):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.eval()
     latents = []
     names = []
+    labels = []
+
     with torch.no_grad():
-        for x, filenames in loader:
+        for x, filenames, y in loader:
             x = x.to(device)
             x = x.unsqueeze(1)
-            mu, _ = model.encoder(x)
+
+            y_conditional = None
+            if model.is_conditional:
+                y = y.long().to(device)
+                y_conditional = F.one_hot(y, num_classes=model.num_classes).float()
+
+            mu, _ = model.encoder(x, y_conditional)
             latents.append(mu.cpu().numpy())
             names.extend(filenames)
-            
-    return np.concatenate(latents,axis=0), names
+            labels.append(y.cpu().numpy())
+
+    return np.concatenate(latents, axis=0), np.concatenate(labels, axis=0), names
 
 def combine_audio_and_lyrics(latent_vecs, audio_names, root: Path=Path(".")):
     hybrid = []
@@ -305,3 +335,39 @@ def combine_audio_and_lyrics(latent_vecs, audio_names, root: Path=Path(".")):
             
     return np.array(hybrid)
         
+def combine_audio_lyrics_and_genre(latent_vecs, audio_names, labeled_df, root: Path = Path(".")):
+    """
+    genre_model: a loaded SentenceTransformer model, e.g.
+                 SentenceTransformer("all-MiniLM-L6-v2")
+    """
+    hybrid = []
+    skipped = []
+    genre_model = SentenceTransformer("all-MiniLM-L6-v2")
+
+    for i, full_name in enumerate(audio_names):
+        parent_stem = str(Path(full_name).stem).split("_")[0]
+        z_audio = latent_vecs[i]
+        embeddings_path = root / config.EMBEDDINGS_DIR / f"{parent_stem}.npy"
+
+        if not embeddings_path.exists():
+            print(f"Warning: No lyrics embedding for {parent_stem}")
+            skipped.append(i)
+            continue
+
+        row = labeled_df[labeled_df["audio_file_stem"] == parent_stem]
+        if row.empty:
+            print(f"Warning: No genre info for {parent_stem}")
+            skipped.append(i)
+            continue
+
+        z_text = np.load(embeddings_path)
+        genre_raw = row["genres"].values[0]  # e.g. "Jazz, Vocal Jazz, Pop/Rock"
+        z_genre = genre_model.encode(genre_raw)  # (genre_embed_dim,)
+
+        z_combined = np.concatenate([z_audio, z_text, z_genre])
+        hybrid.append(z_combined)
+
+    if skipped:
+        print(f"Skipped {len(skipped)} samples due to missing lyrics or genre info.")
+
+    return np.array(hybrid)

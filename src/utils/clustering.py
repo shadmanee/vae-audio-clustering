@@ -1,6 +1,6 @@
 import os, numpy as np, matplotlib.pyplot as plt, pandas as pd
 
-from sklearn.metrics import silhouette_score, silhouette_samples
+from sklearn.metrics import silhouette_score, silhouette_samples, adjusted_rand_score, normalized_mutual_info_score
 
 def _save_elbow_plot(visualizer, save_dir):
     path = os.path.join(save_dir, "elbow_plot.png")
@@ -49,3 +49,32 @@ def _append_metrics_to_csv(metrics, model_type, save_dir):
 
     df_combined.to_csv(csv_path, index=False)
     # print(f"Metrics saved to {csv_path}")
+
+def compute_supervised_metrics(true_labels, pred_labels):
+    """
+    Compute ARI, NMI, and Cluster Purity.
+    Only called when true labels are meaningful (not all -1).
+    """
+    true_labels = np.array(true_labels)
+    pred_labels = np.array(pred_labels)
+
+    # Cluster Purity
+    total, n = 0, len(true_labels)
+    for cluster_id in np.unique(pred_labels):
+        mask = pred_labels == cluster_id
+        if mask.sum() == 0:
+            continue
+        most_common = np.bincount(true_labels[mask]).max()
+        total += most_common
+    purity = total / n
+
+    return {
+        "ari":    adjusted_rand_score(true_labels, pred_labels),
+        "nmi":    normalized_mutual_info_score(true_labels, pred_labels),
+        "purity": purity
+    }
+
+
+def _has_true_labels(true_labels):
+    """Check if true labels are meaningful (not placeholder -1 values)."""
+    return true_labels is not None and np.any(np.array(true_labels) != -1)

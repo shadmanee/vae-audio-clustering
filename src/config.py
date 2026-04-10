@@ -3,19 +3,16 @@ import os
 
 class BaseConfig:
     # general user defined (fixed) parameters
-    RAW_AUDIO_DIR_EN = Path("data/audio/en_clips")
+    RAW_AUDIO_DIR_EN = Path("data/audio/en_clips") # or "en_clips"
     RAW_AUDIO_DIR_BN = Path("data/audio/bn_clips")
-    FEATURES_DIR = Path("data/features/en_only") # TODO: CHANGE TO data/features FOR ENGLISH + BANGLA AUDIO FEATURES
-    LYRICS_DIR_EN = Path("data/lyrics/en")
-    EMBEDDINGS_DIR = Path("data/embeddings")
+    FEATURES_DIR = Path("data/features/en") # "en_bn" (for en + bn audio features) or "en_only"
+    LYRICS_DIR_EN = Path("data/lyrics/en") # "test_en" or "en"
+    EMBEDDINGS_DIR = Path("data/embeddings/en") # "test_en" or "en"
     RESULT_DIR = Path("results")
-    METADATA_DIR = Path("data/metadata")
-
-    DEBUG = False
+    METADATA_DIR = Path("data/metadata") # TODO: update to metadata file?
+    TSNE_DIR = RESULT_DIR / "clustering" / "tsne"
 
     N_SUBSET = 2500 # an integer or None
-    
-    MODEL_TYPE = "basic"
 
     # spectrogram parameters
     SAMPLE_RATE = 22050
@@ -27,10 +24,12 @@ class BaseConfig:
     INPUT_HEIGHT = 64
     INPUT_WIDTH = 91
     INPUT_DIM = INPUT_HEIGHT * INPUT_WIDTH
+    MODEL_TYPE = "cvae" # options: basic, conv, cvae, beta
+    VAE_TYPE = "conv" # ONLY CHANGE WHEN WORKING WITH BETA/CVAE: basic/conv
     
     # general user defined (fixed) parameters
-    EPOCHS = 3
-    TRIALS = 3
+    EPOCHS = 5 # TODO: update 
+    TRIALS = 5 # TODO: update
     SHUFFLE = True
     # anneal over first 20% of total epochs
     ANNEALING_EPOCHS = int(0.2 * EPOCHS)
@@ -55,6 +54,7 @@ class BaseConfig:
     
     # HuggingFace
     HF_TOKEN = os.environ.get("HF_TOKEN")
+    
     
 config = BaseConfig()
 
