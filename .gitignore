@@ -209,3 +209,15 @@ __marimo__/
 data/
 results/
 */test/
+*.txt
+*.hdf5
+*.keras
+*.npy
+*.json
+*.csv
+*.png
+*.jpg
+*.jpeg
+lyrics_genre_classification_*.ipynb
+lyrics_extraction.ipynb
+bn_data_exploration.ipynb
