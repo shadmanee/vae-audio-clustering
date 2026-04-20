@@ -16,8 +16,8 @@ class Encoder(nn.Module):
         dims = [self.input_dim] + intermediate_dims
         layers = [nn.Flatten()]
         for in_dim, out_dim in zip(dims, dims[1:]):
-            layers.append(nn.Linear(in_dim, out_dim)) # type: ignore
-            layers.append(nn.LeakyReLU(inplace=True)) # type: ignore
+            layers.append(nn.Linear(in_dim, out_dim))
+            layers.append(nn.LeakyReLU(inplace=True))
 
         self.net = nn.Sequential(*layers)
 

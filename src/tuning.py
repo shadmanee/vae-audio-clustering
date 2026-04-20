@@ -14,6 +14,7 @@ def _suggest_basic_vae(trial: optuna.trial.Trial):
     base_cfg.HIDDEN_DIM_1 = trial.suggest_categorical("HIDDEN_DIM_1", [512, 1024, 2048])
     base_cfg.HIDDEN_DIM_2 = trial.suggest_categorical("HIDDEN_DIM_2", [128, 256, 512])
     base_cfg.LATENT_DIM = trial.suggest_categorical("LATENT_DIM", [16, 32, 64])
+    base_cfg.BETA_TYPE = "fixed" # always fixed when NOT beta-VAE
 
     return base_cfg
 
@@ -28,6 +29,8 @@ def _suggest_conv_vae(trial: optuna.trial.Trial):
     base_cfg.HIDDEN_DIM_2 = channel_1 * channel_2_multiplier
     base_cfg.HIDDEN_DIM_1 = channel_1 * channel_2_multiplier * channel_3_multiplier
     base_cfg.LATENT_DIM   = trial.suggest_categorical("LATENT_DIM", [16, 32, 64])
+    
+    base_cfg.BETA_TYPE = "fixed" # always fixed when NOT beta-VAE
     
     from models.encoders.conv_encoder import Encoder
     temp_encoder = Encoder(layer_params={
@@ -44,19 +47,43 @@ def _suggest_conv_vae(trial: optuna.trial.Trial):
     return base_cfg
 
 def _suggest_beta_vae(trial: optuna.trial.Trial):
-    pass
+    base_cfg = BaseConfig()
+
+    channel_1 = trial.suggest_categorical("CHANNEL_1", [2, 4, 8, 16, 32])
+    channel_2_multiplier = trial.suggest_categorical("CHANNEL_2_MULTIPLIER", [2, 4, 8])
+    channel_3_multiplier = trial.suggest_categorical("CHANNEL_3_MULTIPLIER", [2, 4, 8])
+
+    base_cfg.HIDDEN_DIM_3 = channel_1
+    base_cfg.HIDDEN_DIM_2 = channel_1 * channel_2_multiplier
+    base_cfg.HIDDEN_DIM_1 = channel_1 * channel_2_multiplier * channel_3_multiplier
+    base_cfg.LATENT_DIM   = trial.suggest_categorical("LATENT_DIM", [16, 32, 64])
+    
+    base_cfg.BETA_TYPE = "annealing"
+    base_cfg.BETA = trial.suggest_categorical("BETA", [1.0, 2.0, 3.0, 4.0, 5.0])
+    
+    from models.encoders.conv_encoder import Encoder
+    temp_encoder = Encoder(layer_params={
+        "input_height":      base_cfg.INPUT_HEIGHT,
+        "input_width":       base_cfg.INPUT_WIDTH,
+        "intermediate_dims": [base_cfg.HIDDEN_DIM_1, base_cfg.HIDDEN_DIM_2, base_cfg.HIDDEN_DIM_3],
+        "latent_dim":        base_cfg.LATENT_DIM
+    })
+
+    if temp_encoder.flattened_size > 50000:
+        print(f"Pruning — flattened_size={temp_encoder.flattened_size}")
+        raise optuna.exceptions.TrialPruned()
+
+    return base_cfg
 
 def _suggest_cvae(trial: optuna.trial.Trial):
-    if config.VAE_TYPE == "basic": 
-        return _suggest_basic_vae(trial=trial)
     return _suggest_conv_vae(trial=trial)
 
 def _suggest_shared_parameters(trial: optuna.trial.Trial, base_cfg: BaseConfig):
     base_cfg.LR = trial.suggest_float("LR", 1e-4, 1e-3, log=True)
     base_cfg.BATCH_SIZE = trial.suggest_categorical("BATCH_SIZE", [16, 32, 64])
     
-    if base_cfg.BETA_CHOICE == "tunable":
-        base_cfg.BETA = trial.suggest_categorical("BETA", [1.0, 2.0, 3.0, 4.0, 5.0])
+    # if base_cfg.BETA_CHOICE == "tunable":
+    #     base_cfg.BETA = trial.suggest_categorical("BETA", [1.0, 2.0, 3.0, 4.0, 5.0])
     
     return base_cfg
 
@@ -78,6 +105,8 @@ def make_objective_function(model_type, dataset, plot_dir_name=config.MODEL_TYPE
     def objective(trial: optuna.trial.Trial):
         trial_cfg = SEARCH_SPACES[model_type](trial=trial)
         trial_cfg = _suggest_shared_parameters(trial=trial, base_cfg=trial_cfg)
+        
+        print("\n"*3, "="*20, f"\nSUGGESTED PARAMS FOR TRIAL {trial.number}: {[item for item in trial_cfg.__dict__.items()]}\n", "="*20, "\n"*3)
         
         train_loader, test_loader = split_data(dataset=dataset, ratio=0.8, batch_size=trial_cfg.BATCH_SIZE, shuffle=config.SHUFFLE)
         
@@ -122,8 +151,7 @@ def run_tuning(model_type, dataset, plot_dir_name=config.MODEL_TYPE, num_classes
         
     # clearing trials plots dir for this study
     trial_plots_dir = root / config.RESULT_DIR / "trials" / plot_dir_name
-    # print(trial_plots_dir)          # verify the path is what you expect
-    # print(trial_plots_dir.exists()) # verify it's actually finding the directory
+    
     if trial_plots_dir.exists():
         print("Creating fresh trials directory...")
         shutil.rmtree(trial_plots_dir)
@@ -173,11 +201,9 @@ def save_study_plots(study: optuna.Study, plot_dir_name: str, root: Path=Path(".
         "param_importances":     plot_param_importances(study),
         "parallel_coordinate":   plot_parallel_coordinate(study),
         "edf":                   plot_edf(study),
-        "timeline":              plot_timeline(study),
-        "contour":              plot_contour(study)
     }
 
     for name, fig in plots.items():
-        path = str(plots_dir / f"{name}.html")
-        fig.write_html(path)
+        path = str(plots_dir / f"{name}.png")
+        fig.write_image(path)
         print(f"Saved: {path}")

@@ -8,6 +8,8 @@ class Decoder(nn.Module):
         self.input_width = layer_params["input_width"]
         self.intermediate_dims = list(layer_params["intermediate_dims"])
         self.latent_dim = layer_params["latent_dim"]
+        self.num_classes = layer_params["num_classes"]
+        self.cond_dim = layer_params.get("cond_dim", 32)
 
         dims = self.intermediate_dims + [1]
         spatial_dims = self._compute_spatial_dims(n_layers=len(self.intermediate_dims))
@@ -15,7 +17,12 @@ class Decoder(nn.Module):
         self.start_h, self.start_w = spatial_dims[0]
         self.flattened_size = self.intermediate_dims[0] * self.start_h * self.start_w
 
-        self.fc = nn.Linear(self.latent_dim, self.flattened_size)
+        self.condition_proj = nn.Sequential(
+            nn.Linear(self.num_classes, self.cond_dim),
+            nn.LeakyReLU(inplace=True),
+        )
+
+        self.fc = nn.Linear(self.latent_dim + self.cond_dim, self.flattened_size)
 
         layers = [
             nn.Unflatten(1, (self.intermediate_dims[0], self.start_h, self.start_w))
@@ -63,26 +70,9 @@ class Decoder(nn.Module):
         dims.reverse()
         return dims
 
-    def forward(self, z: torch.Tensor) -> torch.Tensor:
-        h = self.fc(z)
+    def forward(self, z: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        y_feat = self.condition_proj(y)
+        zy = torch.cat([z, y_feat], dim=1)
+        h = self.fc(zy)
         x_hat = self.decoder(h)
         return x_hat
-
-
-if __name__ == "__main__":
-    import torch.nn.functional as F
-
-    # Unconditional
-    dec = Decoder({
-        "input_height": 64, "input_width": 91,
-        "intermediate_dims": [128, 64, 32], "latent_dim": 32
-    })
-    print(dec)
-
-    # Conditional
-    dec_cvae = Decoder({
-        "input_height": 64, "input_width": 91,
-        "intermediate_dims": [128, 64, 32], "latent_dim": 32,
-        "num_classes": 9
-    })
-    print(dec_cvae)

@@ -5,12 +5,13 @@ class BaseConfig:
     # general user defined (fixed) parameters
     RAW_AUDIO_DIR_EN = Path("data/audio/en_clips") # or "en_clips"
     RAW_AUDIO_DIR_BN = Path("data/audio/bn_clips")
-    FEATURES_DIR = Path("data/features/en") # "en_bn" (for en + bn audio features) or "en_only"
+    FEATURES_DIR = Path("data/features/en_bn") # "en_bn" (for en + bn audio features) or "en_only"
     LYRICS_DIR_EN = Path("data/lyrics/en") # "test_en" or "en"
-    EMBEDDINGS_DIR = Path("data/embeddings/en") # "test_en" or "en"
+    LYRICS_DIR_BN = Path("data/lyrics/bn") # "test_en" or "en"
+    EMBEDDINGS_DIR = Path("data/embeddings/en_bn") # "en" or "bn" or "en_bn"
     RESULT_DIR = Path("results")
     METADATA_DIR = Path("data/metadata") # TODO: update to metadata file?
-    TSNE_DIR = RESULT_DIR / "clustering" / "tsne"
+    TSNE_DIR = RESULT_DIR / "visualizations"
 
     N_SUBSET = 2500 # an integer or None
 
@@ -24,12 +25,12 @@ class BaseConfig:
     INPUT_HEIGHT = 64
     INPUT_WIDTH = 91
     INPUT_DIM = INPUT_HEIGHT * INPUT_WIDTH
-    MODEL_TYPE = "cvae" # options: basic, conv, cvae, beta
+    MODEL_TYPE = "conv" # options: basic, conv, cvae, beta
     VAE_TYPE = "conv" # ONLY CHANGE WHEN WORKING WITH BETA/CVAE: basic/conv
     
     # general user defined (fixed) parameters
-    EPOCHS = 5 # TODO: update 
-    TRIALS = 5 # TODO: update
+    EPOCHS = 100 # TODO: update 
+    TRIALS = 15 # TODO: update
     SHUFFLE = True
     # anneal over first 20% of total epochs
     ANNEALING_EPOCHS = int(0.2 * EPOCHS)
@@ -46,8 +47,8 @@ class BaseConfig:
     
     # NOT TUNABLE - beta parameters
     # cases: 1. constant beta, fixed, 2. constant beta, annealing, 3. tunable beta, fixed, 4. tunable beta, annealing
-    BETA_TYPE: str = "annealing" # or "annealing"
-    BETA_CHOICE: str = "tunable" # or "tunable"
+    BETA_TYPE: str = "annealing" # "fixed" or "annealing"
+    # BETA_CHOICE: str = "tunable" # "constant" or "tunable"
     
     # general shared tunable parameters
     LR: float = 1e-4 # suggest_float returns float

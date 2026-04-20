@@ -13,47 +13,36 @@ class VAE(nn.Module):
         intermediate_dims = [self.config.HIDDEN_DIM_1, self.config.HIDDEN_DIM_2]
 
         if self.model_type == "basic":
-            # UNAFFECTED BY VAE_TYPE
             from .encoders.vanilla_encoder import Encoder
             from .decoders.vanilla_decoder import Decoder
 
-        elif self.model_type == "conv":
-            # UNAFFECTED BY VAE_TYPE
+        elif self.model_type in ["conv", "beta"]:
             from .encoders.conv_encoder import Encoder
             from .decoders.conv_decoder import Decoder
             intermediate_dims.append(self.config.HIDDEN_DIM_3)
 
-        elif self.model_type == "beta":
-            # Same architecture as basic, different beta in loss — handled in training
-            if self.config.VAE_TYPE == "basic":
-                from .encoders.vanilla_encoder import Encoder
-                from .decoders.vanilla_decoder import Decoder
-            else:
-                from .encoders.conv_encoder import Encoder
-                from .decoders.conv_decoder import Decoder
-
         elif self.model_type == "cvae":
-            if self.config.VAE_TYPE == "basic":
-                from .encoders.vanilla_encoder import Encoder
-                from .decoders.vanilla_decoder import Decoder
-            else:
-                from .encoders.conv_encoder import Encoder
-                from .decoders.conv_decoder import Decoder
-                
-        elif self.model_type == "ae": # autoencoder baseline
+            from .encoders.conditional_encoder import Encoder
+            from .decoders.conditional_decoder import Decoder
+            intermediate_dims.append(self.config.HIDDEN_DIM_3)
+
+        elif self.model_type == "ae":
             from .encoders.conv_encoder import Encoder
             from .decoders.conv_decoder import Decoder
+            intermediate_dims.append(self.config.HIDDEN_DIM_3)
 
         else:
-            raise ValueError(f"'{self.model_type}' is not a valid model type. "
-                             f"Choose from: 'basic', 'conv', 'beta', 'cvae' or 'ae'.")
+            raise ValueError(
+                f"'{self.model_type}' is not a valid model type. "
+                f"Choose from: 'basic', 'conv', 'beta', 'cvae', or 'ae'."
+            )
 
         layer_params = {
-            "input_height":      self.config.INPUT_HEIGHT,
-            "input_width":       self.config.INPUT_WIDTH,
+            "input_height": self.config.INPUT_HEIGHT,
+            "input_width": self.config.INPUT_WIDTH,
             "intermediate_dims": intermediate_dims,
-            "latent_dim":        self.config.LATENT_DIM,
-            "num_classes":       self.num_classes if self.is_conditional else 0
+            "latent_dim": self.config.LATENT_DIM,
+            "num_classes": self.num_classes if self.is_conditional else 0,
         }
 
         self.encoder = Encoder(layer_params=layer_params)
@@ -64,17 +53,42 @@ class VAE(nn.Module):
         eps = torch.randn_like(std)
         return mu + eps * std
 
+    def encode(self, x, y=None):
+        if self.is_conditional:
+            return self.encoder(x, y)
+        return self.encoder(x)
+
     def decode(self, z, y=None):
-        x_recon = self.decoder(z, y)
+        if self.is_conditional:
+            x_recon = self.decoder(z, y)
+        else:
+            x_recon = self.decoder(z)
+
         return x_recon.view(-1, 1, self.config.INPUT_HEIGHT, self.config.INPUT_WIDTH)
 
     def forward(self, x, y=None):
-        mu, logvar = self.encoder(x, y)
+        # Encode
+        if self.is_conditional:
+            mu, logvar = self.encoder(x, y)
+        else:
+            mu, logvar = self.encoder(x)
+
+        # Latent sample/code
         if self.model_type == "ae":
-            z = mu  # deterministic — skip reparameterization
+            z = mu                 # deterministic latent
+            logvar = torch.zeros_like(mu)  # optional placeholder for compatibility
         else:
             z = self.reparameterize(mu, logvar)
-        return self.decoder(z, y), mu, logvar
+
+        # Decode
+        if self.is_conditional:
+            x_recon = self.decoder(z, y)
+        else:
+            x_recon = self.decoder(z)
+
+        x_recon = x_recon.view(-1, 1, self.config.INPUT_HEIGHT, self.config.INPUT_WIDTH)
+
+        return x_recon, mu, logvar
 
 
 if __name__ == "__main__":

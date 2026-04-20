@@ -81,7 +81,7 @@ class PCABaseline:
         plt.figure(figsize=figsize)
         plt.plot(self.cumulative_variance, marker='o', linestyle='-')
         plt.axhline(y=self.variance_threshold, color='r', linestyle='--', label=f'{int(self.variance_threshold * 100)}% Variance Threshold')
-        plt.axvline(x=self.optimal_n, color='g', linestyle='--', label=f'Optimal n={self.optimal_n}') # type: ignore
+        plt.axvline(x=self.optimal_n, color='g', linestyle='--', label=f'Optimal n={self.optimal_n}')
         plt.title('PCA Explained Variance vs. Number of Components')
         plt.xlabel('Number of Components')
         plt.ylabel('Cumulative Explained Variance')
@@ -97,7 +97,7 @@ class PCABaseline:
         self._check_fitted()
         n = self.n_components or self.optimal_n
         variance = (
-            self.cumulative_variance[n - 1] # type: ignore
+            self.cumulative_variance[n - 1]
             if self.cumulative_variance is not None
             else np.sum(self.pca_fixed.explained_variance_ratio_)
         )

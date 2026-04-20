@@ -9,8 +9,9 @@ from sentence_transformers import SentenceTransformer
 
 from typing import Tuple
 from config import BaseConfig, config
+from datetime import datetime
 
-import matplotlib.pyplot as plt, numpy as np, pandas as pd, os
+import matplotlib.pyplot as plt, numpy as np, pandas as pd, os, json
 
 def split_data(dataset, ratio=0.8, batch_size=32, shuffle=True) -> Tuple[DataLoader, DataLoader]:
     train_size = int(ratio * len(dataset))
@@ -34,12 +35,14 @@ def vae_loss(x_hat, x, mu, logvar, epoch, beta_params):
     beta = beta_params.get("beta", 1.0)
     beta_type = beta_params.get("beta_type", "fixed")
     
+    # print("\n"*3, "="*20, F"\n VAE LOSS BETA PARAMETERS: {beta_params}\n", "="*20, "\n"*3)
+    
     if beta_type == "annealing":
         annealing_epochs = beta_params.get("annealing_epochs", None)
         epoch = epoch if annealing_epochs is None else annealing_epochs
         beta = min(beta, (epoch + 1) / 10)
     
-    recon = F.mse_loss(x_hat, x, reduction="sum")
+    recon = F.mse_loss(x_hat.squeeze(1), x.squeeze(1), reduction="sum")
     
     # Skip KL entirely if mu/logvar are None (autoencoder case)
     if mu is None or logvar is None:
@@ -183,22 +186,54 @@ def train_vae(model: VAE, train_loader, test_loader, optimizer, epochs, annealin
         
     return history
 
-def plot_history(history, title, file_path):
+
+def plot_history(history, title, file_path, skip_epochs=1, log_scale=True):
     plt.figure(figsize=(7, 4))
-    plt.plot(history["train_total"], label="train total")
-    plt.plot(history["test_total"], label="test total")
-    plt.plot(history["train_recon"], label="train recon")
-    plt.plot(history["test_recon"], label="test recon")
-    plt.plot(history["train_kl"], label="train kl")
-    plt.plot(history["test_kl"], label="test kl")
+    
+    # Create an epoch range that accounts for skipped epochs
+    total_epochs = len(history["train_total"])
+    epochs = range(skip_epochs, total_epochs)
+    
+    # Plot sliced history
+    plt.plot(epochs, history["train_total"][skip_epochs:], label="train total")
+    plt.plot(epochs, history["test_total"][skip_epochs:], label="test total")
+    
+    plt.plot(epochs, history["train_recon"][skip_epochs:], label="train recon", linestyle="--")
+    plt.plot(epochs, history["test_recon"][skip_epochs:], label="test recon", linestyle="--")
+    
+    plt.plot(epochs, history["train_kl"][skip_epochs:], label="train kl", linestyle=":")
+    plt.plot(epochs, history["test_kl"][skip_epochs:], label="test kl", linestyle=":")
+    
     plt.title(title)
     plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.legend()
+    plt.ylabel("Loss" + (" (Log Scale)" if log_scale else ""))
+    
+    if log_scale:
+        plt.yscale("log")
+        
+    # Move legend outside the plot so it doesn't cover your curves
+    plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
     
     plt.tight_layout()
-    plt.savefig(file_path, dpi=300)
+    plt.savefig(file_path, dpi=300, bbox_inches="tight") # bbox_inches prevents legend cutoff
     plt.close()
+
+# def plot_history(history, title, file_path):
+#     plt.figure(figsize=(7, 4))
+#     plt.plot(history["train_total"], label="train total")
+#     plt.plot(history["test_total"], label="test total")
+#     plt.plot(history["train_recon"], label="train recon")
+#     plt.plot(history["test_recon"], label="test recon")
+#     plt.plot(history["train_kl"], label="train kl")
+#     plt.plot(history["test_kl"], label="test kl")
+#     plt.title(title)
+#     plt.xlabel("Epoch")
+#     plt.ylabel("Loss")
+#     plt.legend()
+    
+#     plt.tight_layout()
+#     plt.savefig(file_path, dpi=300)
+#     plt.close()
     
 def create_new_config(best_params: dict):
     """
@@ -256,6 +291,7 @@ def save_result_to_csv(study=None, history=None, model_name=config.MODEL_TYPE, s
 def extract_latents(model, loader, device=None):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     model.eval()
     latents = []
     labels = []
@@ -263,61 +299,65 @@ def extract_latents(model, loader, device=None):
     with torch.no_grad():
         for x, filenames, y in loader:
             x = x.to(device)
-            if len(x.shape) == 3:
-                x = x.unsqueeze(1)  # (batch, 64, 91) → (batch, 1, 64, 91) for conv
 
-            y_conditional = None
+            # Ensure conv input shape is (B, 1, H, W)
+            if x.ndim == 3:
+                x = x.unsqueeze(1)
+
+            y_cpu = y.clone()
+
             if model.is_conditional:
-                y = y.long().to(device)
-                y_conditional = F.one_hot(y, num_classes=model.num_classes).float().to(device)
+                y_device = y.long().to(device)
+                y_conditional = F.one_hot(
+                    y_device, num_classes=model.num_classes
+                ).float()
+                mu, _ = model.encode(x, y_conditional)
+            else:
+                mu, _ = model.encode(x)
 
-            mu, _ = model.encoder(x, y_conditional)
             latents.append(mu.cpu().numpy())
-            labels.append(y.cpu().numpy())
+            labels.append(y_cpu.numpy())
 
-    return np.concatenate(latents), np.concatenate(labels)
+    return np.concatenate(latents, axis=0), np.concatenate(labels, axis=0)
 
-# DIFFERENT FROM THE PREVIOUS EASY TASK FUNCTION
-# def extract_latents_with_names(model, loader, device=None):
-#     if device is None:
-#         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#     model.eval()
-#     latents = []
-#     names = []
-#     with torch.no_grad():
-#         for x, filenames in loader:
-#             x = x.to(device)
-#             x = x.unsqueeze(1)
-#             mu, _ = model.encoder(x)
-#             latents.append(mu.cpu().numpy())
-#             names.extend(filenames)
-            
-#     return np.concatenate(latents,axis=0), names
 
 def extract_latents_with_names(model, loader, device=None):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     model.eval()
     latents = []
-    names = []
     labels = []
+    names = []
 
     with torch.no_grad():
         for x, filenames, y in loader:
             x = x.to(device)
-            x = x.unsqueeze(1)
 
-            y_conditional = None
+            # Ensure conv input shape is (B, 1, H, W)
+            if x.ndim == 3:
+                x = x.unsqueeze(1)
+
+            y_cpu = y.clone()
+
             if model.is_conditional:
-                y = y.long().to(device)
-                y_conditional = F.one_hot(y, num_classes=model.num_classes).float()
+                y_device = y.long().to(device)
+                y_conditional = F.one_hot(
+                    y_device, num_classes=model.num_classes
+                ).float()
+                mu, _ = model.encode(x, y_conditional)
+            else:
+                mu, _ = model.encode(x)
 
-            mu, _ = model.encoder(x, y_conditional)
             latents.append(mu.cpu().numpy())
+            labels.append(y_cpu.numpy())
             names.extend(filenames)
-            labels.append(y.cpu().numpy())
 
-    return np.concatenate(latents, axis=0), np.concatenate(labels, axis=0), names
+    return (
+        np.concatenate(latents, axis=0),
+        np.concatenate(labels, axis=0),
+        names,
+    )
 
 def combine_audio_and_lyrics(latent_vecs, audio_names, root: Path=Path(".")):
     hybrid = []
@@ -371,3 +411,63 @@ def combine_audio_lyrics_and_genre(latent_vecs, audio_names, labeled_df, root: P
         print(f"Skipped {len(skipped)} samples due to missing lyrics or genre info.")
 
     return np.array(hybrid)
+
+def save_model(model, model_name: str, cfg: BaseConfig, root: Path = Path(".")):
+    """Save model weights and config together to enable standalone loading."""
+    save_dir = root / config.RESULT_DIR / "models"
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_name = f"{model_name}_{timestamp}"
+
+    # Save weights
+    weights_path = save_dir / f"{base_name}.pt"
+    torch.save(model.state_dict(), weights_path)
+
+    # Save config as JSON alongside weights
+    cfg_path = save_dir / f"{base_name}_cfg.json"
+    cfg_dict = {k: v for k, v in vars(cfg.__class__).items()
+                if not k.startswith("_") and not callable(v)}
+    # Override with any instance-level attributes set during tuning
+    cfg_dict.update({k: v for k, v in vars(cfg).items()
+                     if not k.startswith("_")})
+    # Convert non-serializable types
+    cfg_dict = {k: str(v) if isinstance(v, Path) else v
+                for k, v in cfg_dict.items()
+                if isinstance(v, (int, float, str, bool, Path))}
+
+    with open(cfg_path, "w") as f:
+        json.dump(cfg_dict, f, indent=2)
+
+    print(f"Weights saved to : {weights_path}")
+    print(f"Config saved to  : {cfg_path}")
+
+    return weights_path, cfg_path
+
+
+def load_model(model_type: str, weights_path: Path, cfg_path: Path, num_classes: int = 0, device=None):
+    """
+    Load a model standalone from saved weights and config.
+    No tuning or best_trial_cfg needed.
+    """
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Reconstruct config from saved JSON
+    with open(cfg_path, "r") as f:
+        cfg_dict = json.load(f)
+
+    cfg = BaseConfig()
+    for k, v in cfg_dict.items():
+        if hasattr(cfg, k):
+            setattr(cfg, k, v)
+
+    # Rebuild model architecture
+    model = VAE(cfg=cfg, model_type=model_type, num_classes=num_classes).to(device)
+    model.load_state_dict(torch.load(weights_path, map_location=device))
+    model.eval()
+
+    print(f"Model loaded from : {weights_path}")
+    print(f"Config loaded from: {cfg_path}")
+
+    return model, cfg

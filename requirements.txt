@@ -12,3 +12,4 @@ yellowbrick
 dotenv
 sentence-transformers
 umap-learn
+kaleido
