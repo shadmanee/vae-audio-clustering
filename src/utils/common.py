@@ -431,36 +431,55 @@ def combine_audio_and_lyrics(latent_vecs, audio_names, root: Path = Path("."), c
 
     return np.array(hybrid)
         
-def combine_audio_lyrics_and_genre(latent_vecs, audio_names, labeled_df, root: Path = Path(".")):
-    """
-    genre_model: a loaded SentenceTransformer model, e.g.
-                 SentenceTransformer("all-MiniLM-L6-v2")
-    """
-    hybrid = []
-    skipped = []
+def combine_audio_lyrics_and_genre(latent_vecs, audio_names, labeled_df, root: Path = Path("."), cfg: BaseConfig = config):
     genre_model = SentenceTransformer("all-MiniLM-L6-v2")
 
+    # --- Pass 1: collect all lyrics embeddings and genre vectors that exist ---
+    z_texts = {}
+    z_genres = {}
     for i, full_name in enumerate(audio_names):
-        parent_stem = "_".join(str(Path(full_name).stem).split("_")[:-2])
-        z_audio = latent_vecs[i]
+        stem = Path(full_name).stem
+        parent_stem = "_".join(stem.split("_")[:-2])
+        
         embeddings_path = root / config.EMBEDDINGS_DIR / f"{parent_stem}.npy"
 
         if not embeddings_path.exists():
-            print(f"Warning: No lyrics embedding for {parent_stem}")
-            skipped.append(i)
             continue
 
         row = labeled_df[labeled_df["audio_file_stem"] == parent_stem]
         if row.empty:
+            continue
+
+        z_texts[parent_stem] = np.load(embeddings_path)
+        z_genres[parent_stem] = genre_model.encode(row["genre"].values[0])
+    
+    # --- Fit PCA on all lyrics embeddings at once ---
+    pca = PCA(n_components=cfg.LATENT_DIM)
+    all_lyrics = np.stack(list(z_texts.values()))  # (N, 768)
+    pca.fit(all_lyrics)
+
+    # --- Pass 2: build fused vectors ---
+    hybrid = []
+    skipped = []
+    for i, full_name in enumerate(audio_names):
+        stem = Path(full_name).stem
+        parent_stem = "_".join(stem.split("_")[:-2])
+
+        if parent_stem not in z_texts.keys():
+            print(f"Warning: No lyrics embedding for {parent_stem}")
+            skipped.append(i)
+            continue
+
+        if parent_stem not in z_genres.keys():
             print(f"Warning: No genre info for {parent_stem}")
             skipped.append(i)
             continue
 
-        z_text = np.load(embeddings_path)
-        genre_raw = row["genres"].values[0]  # e.g. "Jazz, Vocal Jazz, Pop/Rock"
-        z_genre = genre_model.encode(genre_raw)  # (genre_embed_dim,)
+        z_audio = latent_vecs[i]
+        z_lyrics_reduced = pca.transform(z_texts[parent_stem].reshape(1, -1)).squeeze()
+        z_genre = z_genres[parent_stem]
 
-        z_combined = np.concatenate([z_audio, z_text, z_genre])
+        z_combined = np.concatenate([z_audio, z_lyrics_reduced, z_genre])
         hybrid.append(z_combined)
 
     if skipped:
