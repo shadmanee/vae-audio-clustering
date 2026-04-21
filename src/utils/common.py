@@ -197,8 +197,6 @@ def train_vae(model: VAE, train_loader, test_loader, optimizer, epochs, annealin
             print(f"{'Total Loss':<12} | {train_total:<12.4f} | {test_total:<12.4f}")
         print("-" * 50 + "\n")
         
-    print(train_recon_list, test_recon_list)
-        
     history = {
         "train_recon": train_recon_list,
         "test_recon":  test_recon_list,

@@ -57,7 +57,7 @@ def _suggest_beta_vae(trial: optuna.trial.Trial):
     base_cfg.HIDDEN_DIM_1 = channel_1 * channel_2_multiplier * channel_3_multiplier
     base_cfg.LATENT_DIM   = trial.suggest_categorical("LATENT_DIM", [16, 32, 64])
     base_cfg.BETA_TYPE = trial.suggest_categorical("BETA_TYPE", ["annealing"])
-    base_cfg.BETA = trial.suggest_categorical("BETA", [1.0, 2.0, 3.0, 4.0, 5.0])
+    base_cfg.BETA = trial.suggest_categorical("BETA", [2.0, 3.0, 4.0, 5.0])
     
     from models.encoders.conv_encoder import Encoder
     temp_encoder = Encoder(layer_params={

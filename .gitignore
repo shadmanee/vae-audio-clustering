@@ -214,7 +214,6 @@ results/
 *.keras
 *.npy
 *.json
-*.csv
 *.png
 *.jpg
 *.jpeg
