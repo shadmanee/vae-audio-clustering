@@ -11,6 +11,8 @@ class Encoder(nn.Module):
         self.num_classes = layer_params["num_classes"]
         self.cond_dim = layer_params.get("cond_dim", 32)
         self.fusion_dim = layer_params.get("fusion_dim", max(128, self.intermediate_dims[0]))
+        
+        assert self.num_classes > 0, f"num_classes must be > 0 for conditional VAE, got {self.num_classes}"
 
         dims = [1] + self.intermediate_dims
         layers = []
@@ -47,6 +49,7 @@ class Encoder(nn.Module):
             return int(np.prod(out.shape[1:]))
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        assert y.shape[1] == self.num_classes, f"Expected one-hot of dim {self.num_classes}, got {y.shape[1]}"
         h = self.feature_extractor(x)
         y_feat = self.condition_proj(y)
         fused = torch.cat([h, y_feat], dim=1)

@@ -3,7 +3,7 @@ from pathlib import Path
 import torch
 import torch.optim as optim
 
-import pandas as pd, numpy as np
+import pandas as pd, numpy as np, os
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
 from sklearn.neighbors import NearestNeighbors
 
@@ -24,7 +24,7 @@ def run_VAE(model_type: str, plot_dir_name=config.MODEL_TYPE, root: Path=Path(".
         df_meta_path = root / config.METADATA_DIR / "metadata_en_bn.csv"
         labeled_df = pd.read_csv(df_meta_path)
         num_labels = len(labeled_df["label"].unique())
-        print("\n"*3, "="*20, f"\n{num_labels}\n", "="*20, "\n"*3)
+        print("\n"*3, "="*20, f"\nNUM_LABELS:\n{num_labels}\n{labeled_df["label"].unique()}\n", "="*20, "\n"*3)
         dataset = AudioSpectogramDatasetwithLabels(dataset_dir=npy_dir, labeled_df=labeled_df)
     else:
         # print("\n"*3, "="*20, F"\nDATASET DIRECTORY: {npy_dir}\n", "="*20, "\n"*3)
@@ -39,7 +39,7 @@ def run_VAE(model_type: str, plot_dir_name=config.MODEL_TYPE, root: Path=Path(".
     
     # converting the best hyperparameters into BaseConfig object
     # best_params -> dict -> BaseConfig
-    best_trial_cfg = create_new_config(best_params=tuning_study.best_params)
+    best_trial_cfg = create_new_config(best_params=tuning_study.best_params, model_type=model_type)
     
     train_loader, test_loader = split_data(dataset=dataset, ratio=0.8, batch_size=best_trial_cfg.BATCH_SIZE, shuffle=config.SHUFFLE)
 
@@ -66,7 +66,7 @@ def run_PCA(model_name, variance_threshold: float = 0.90, root: Path = Path(".")
 
     pca_baseline = PCABaseline(variance_threshold=variance_threshold)
     pca_baseline.fit(train_loader, test_loader)
-    pca_baseline.plot()
+    pca_baseline.plot(save_path=root/config.RESULT_DIR/"final"/"0_pca_baseline_audio_only"/"pca_variance.png")
     pca_baseline.summary()
 
     train_error = pca_baseline.reconstruction_error(train_loader)

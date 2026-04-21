@@ -4,6 +4,7 @@ from models.vae import VAE
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, random_split
+from sklearn.decomposition import PCA
 
 from sentence_transformers import SentenceTransformer
 
@@ -132,6 +133,21 @@ def evaluate_one_epoch(model, loader, epoch, beta_params, device=None):
         "kl": test_kl
     }
     
+def _should_use_log_scale(history: dict, threshold: float = 100.0) -> bool:
+    all_values = []
+    for values in history.values():
+        if values:  # skip empty lists (e.g. kl for ae)
+            all_values.extend(values)
+    
+    if not all_values:
+        return False
+    
+    finite_values = [v for v in all_values if np.isfinite(v) and v > 0]
+    if not finite_values:
+        return False
+    
+    return (max(finite_values) / min(finite_values)) > threshold
+    
 def train_vae(model: VAE, train_loader, test_loader, optimizer, epochs, annealing_epochs, beta=1.0, beta_type="fixed", device=None, trial_i=None, plot_model_dir_name=config.MODEL_TYPE, root: Path=Path(".")):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -142,9 +158,13 @@ def train_vae(model: VAE, train_loader, test_loader, optimizer, epochs, annealin
         "annealing_epochs": annealing_epochs
     }
 
-    history = {"train_total": [], "test_total": [],
-               "train_recon": [], "test_recon": [],
-               "train_kl": [], "test_kl": []}
+    train_total_list = []
+    test_total_list = []
+    train_recon_list = []
+    test_recon_list = []
+    train_kl_list = []
+    test_kl_list = []
+    
     for epoch in range(epochs):
         train_stats = train_one_epoch(model=model, loader=train_loader, optimizer=optimizer, epoch=epoch, beta_params=beta_params, device=device)
         test_stats = evaluate_one_epoch(model=model, loader=test_loader, epoch=epoch, beta_params=beta_params, device=device)
@@ -154,22 +174,39 @@ def train_vae(model: VAE, train_loader, test_loader, optimizer, epochs, annealin
         test_recon = test_stats["recon"]
         train_kl = train_stats["kl"]
         test_kl = test_stats["kl"]
-        history["train_total"].append(train_total)
-        history["test_total"].append(test_total)
-        history["train_recon"].append(train_recon)
-        history["test_recon"].append(test_recon)
-        history["train_kl"].append(train_kl)
-        history["test_kl"].append(test_kl)
+        
+        train_recon_list.append(train_recon)
+        test_recon_list.append(test_recon)
+        
+        if not model.model_type == "ae":
+            train_kl_list.append(train_kl)
+            test_kl_list.append(test_kl)
+            
+            if model.model_type == "beta":
+                train_total_list.append(train_total)
+                test_total_list.append(test_total)
         
         # huge print
         print("-" * 50)
         print(f"Epoch {epoch + 1} / {epochs}")
         print(f"{'Metric':<12} | {'Train':<12} | {'Test':<12}")
         print("-" * 50)
-        print(f"{'Total Loss':<12} | {train_total:<12.4f} | {test_total:<12.4f}")
         print(f"{'Recon':<12} | {train_recon:<12.4f} | {test_recon:<12.4f}")
-        print(f"{'KL Div':<12} | {train_kl:<12.4f} | {test_kl:<12.4f}")
+        if not model.model_type == "ae":
+            print(f"{'KL Div':<12} | {train_kl:<12.4f} | {test_kl:<12.4f}")
+            print(f"{'Total Loss':<12} | {train_total:<12.4f} | {test_total:<12.4f}")
         print("-" * 50 + "\n")
+        
+    print(train_recon_list, test_recon_list)
+        
+    history = {
+        "train_recon": train_recon_list,
+        "test_recon":  test_recon_list,
+        **({"train_kl": train_kl_list,
+            "test_kl":  test_kl_list} if train_kl_list else {}),
+        **({"train_total": train_total_list,
+            "test_total":  test_total_list} if train_total_list else {})
+    }
     
     plot_title = model.model_type
     
@@ -182,7 +219,7 @@ def train_vae(model: VAE, train_loader, test_loader, optimizer, epochs, annealin
     plots_dir.mkdir(parents=True, exist_ok=True)
     file_name = plots_dir / f"{plot_title}.png"
     
-    plot_history(history=history, title=plot_title, file_path=file_name)
+    plot_history(history=history, title=plot_title, file_path=file_name, log_scale=_should_use_log_scale(history=history, threshold=100))
         
     return history
 
@@ -191,18 +228,18 @@ def plot_history(history, title, file_path, skip_epochs=1, log_scale=True):
     plt.figure(figsize=(7, 4))
     
     # Create an epoch range that accounts for skipped epochs
-    total_epochs = len(history["train_total"])
+    total_epochs = len(history["train_recon"])
     epochs = range(skip_epochs, total_epochs)
     
     # Plot sliced history
-    plt.plot(epochs, history["train_total"][skip_epochs:], label="train total")
-    plt.plot(epochs, history["test_total"][skip_epochs:], label="test total")
+    if "train_kl" in history.keys(): plt.plot(epochs, history["train_kl"][skip_epochs:], label="train kl", linestyle=":")
+    if "test_kl" in history.keys(): plt.plot(epochs, history["test_kl"][skip_epochs:], label="test kl", linestyle=":")
+    
+    if "train_total" in history.keys(): plt.plot(epochs, history["train_total"][skip_epochs:], label="train total")
+    if "test_total" in history.keys(): plt.plot(epochs, history["test_total"][skip_epochs:], label="test total")
     
     plt.plot(epochs, history["train_recon"][skip_epochs:], label="train recon", linestyle="--")
     plt.plot(epochs, history["test_recon"][skip_epochs:], label="test recon", linestyle="--")
-    
-    plt.plot(epochs, history["train_kl"][skip_epochs:], label="train kl", linestyle=":")
-    plt.plot(epochs, history["test_kl"][skip_epochs:], label="test kl", linestyle=":")
     
     plt.title(title)
     plt.xlabel("Epoch")
@@ -235,13 +272,14 @@ def plot_history(history, title, file_path, skip_epochs=1, log_scale=True):
 #     plt.savefig(file_path, dpi=300)
 #     plt.close()
     
-def create_new_config(best_params: dict):
+def create_new_config(best_params: dict, model_type: str):
     """
     Create a new config object from best_params dict returned by study.best_params.
     Only overrides attributes that exist in best_params — everything else is
     inherited from base_cfg (or BaseConfig defaults if base_cfg is None).
     """
     cfg = BaseConfig()
+    cfg.MODEL_TYPE = model_type
     conv_special_params = {"CHANNEL_1", "CHANNEL_2_MULTIPLIER", "CHANNEL_3_MULTIPLIER"}
     if conv_special_params.issubset(best_params.keys()):
         cfg.HIDDEN_DIM_3 = best_params["CHANNEL_1"]
@@ -341,6 +379,9 @@ def extract_latents_with_names(model, loader, device=None):
             y_cpu = y.clone()
 
             if model.is_conditional:
+                # print("model.num_classes:", model.num_classes)
+                # print("y min/max:", y.min().item(), y.max().item())
+                # print("unique y:", torch.unique(y).cpu().tolist()[:20])
                 y_device = y.long().to(device)
                 y_conditional = F.one_hot(
                     y_device, num_classes=model.num_classes
@@ -359,20 +400,35 @@ def extract_latents_with_names(model, loader, device=None):
         names,
     )
 
-def combine_audio_and_lyrics(latent_vecs, audio_names, root: Path=Path(".")):
+def combine_audio_and_lyrics(latent_vecs, audio_names, root: Path = Path("."), cfg: BaseConfig = config):
+    
+    # --- Pass 1: collect all lyrics embeddings that exist ---
+    z_texts = {}
+    for full_name in audio_names:
+        parent_stem = "_".join(str(Path(full_name).stem).split("_")[:-2])
+        embeddings_path = root / config.EMBEDDINGS_DIR / f"{parent_stem}.npy"
+        if embeddings_path.exists():
+            z_texts[parent_stem] = np.load(embeddings_path)  # (768,)
+
+    # --- Fit PCA on all lyrics embeddings at once ---
+    pca = PCA(n_components=cfg.LATENT_DIM)
+    all_lyrics = np.stack(list(z_texts.values()))  # (N, 768)
+    pca.fit(all_lyrics)
+
+    # --- Pass 2: build fused vectors ---
     hybrid = []
     for i, full_name in enumerate(audio_names):
-        parent_stem = str(Path(full_name).stem).split("_")[0]
-        z_audio = latent_vecs[i]
-        embeddings_path = root / config.EMBEDDINGS_DIR / f"{parent_stem}.npy"
-                
-        if embeddings_path.exists():
-            z_text = np.load(embeddings_path)
-            z_combined = np.concatenate([z_audio, z_text])
-            hybrid.append(z_combined)
-        else:
+        parent_stem = "_".join(str(Path(full_name).stem).split("_")[:-2])
+        
+        if parent_stem not in z_texts:
             print(f"Warning: No lyrics for {parent_stem}")
+            continue
             
+        z_audio = latent_vecs[i]
+        z_lyrics_reduced = pca.transform(z_texts[parent_stem].reshape(1, -1)).squeeze()  # (latent_dim,)
+        z_combined = np.concatenate([z_audio, z_lyrics_reduced])
+        hybrid.append(z_combined)
+
     return np.array(hybrid)
         
 def combine_audio_lyrics_and_genre(latent_vecs, audio_names, labeled_df, root: Path = Path(".")):
@@ -385,7 +441,7 @@ def combine_audio_lyrics_and_genre(latent_vecs, audio_names, labeled_df, root: P
     genre_model = SentenceTransformer("all-MiniLM-L6-v2")
 
     for i, full_name in enumerate(audio_names):
-        parent_stem = str(Path(full_name).stem).split("_")[0]
+        parent_stem = "_".join(str(Path(full_name).stem).split("_")[:-2])
         z_audio = latent_vecs[i]
         embeddings_path = root / config.EMBEDDINGS_DIR / f"{parent_stem}.npy"
 
@@ -412,29 +468,26 @@ def combine_audio_lyrics_and_genre(latent_vecs, audio_names, labeled_df, root: P
 
     return np.array(hybrid)
 
-def save_model(model, model_name: str, cfg: BaseConfig, root: Path = Path(".")):
-    """Save model weights and config together to enable standalone loading."""
+def save_model(model, model_name: str, cfg: BaseConfig, num_classes: int, root: Path = Path(".")):
     save_dir = root / config.RESULT_DIR / "models"
     save_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     base_name = f"{model_name}_{timestamp}"
 
-    # Save weights
     weights_path = save_dir / f"{base_name}.pt"
     torch.save(model.state_dict(), weights_path)
 
-    # Save config as JSON alongside weights
     cfg_path = save_dir / f"{base_name}_cfg.json"
     cfg_dict = {k: v for k, v in vars(cfg.__class__).items()
                 if not k.startswith("_") and not callable(v)}
-    # Override with any instance-level attributes set during tuning
     cfg_dict.update({k: v for k, v in vars(cfg).items()
                      if not k.startswith("_")})
-    # Convert non-serializable types
     cfg_dict = {k: str(v) if isinstance(v, Path) else v
                 for k, v in cfg_dict.items()
                 if isinstance(v, (int, float, str, bool, Path))}
+
+    cfg_dict["num_classes"] = num_classes
 
     with open(cfg_path, "w") as f:
         json.dump(cfg_dict, f, indent=2)
@@ -445,7 +498,7 @@ def save_model(model, model_name: str, cfg: BaseConfig, root: Path = Path(".")):
     return weights_path, cfg_path
 
 
-def load_model(model_type: str, weights_path: Path, cfg_path: Path, num_classes: int = 0, device=None):
+def load_model(model_type: str, weights_path: Path, cfg_path: Path, device=None):
     """
     Load a model standalone from saved weights and config.
     No tuning or best_trial_cfg needed.
@@ -456,6 +509,8 @@ def load_model(model_type: str, weights_path: Path, cfg_path: Path, num_classes:
     # Reconstruct config from saved JSON
     with open(cfg_path, "r") as f:
         cfg_dict = json.load(f)
+        
+    num_classes = cfg_dict.pop("num_classes", 0)
 
     cfg = BaseConfig()
     for k, v in cfg_dict.items():

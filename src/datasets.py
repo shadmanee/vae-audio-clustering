@@ -43,8 +43,9 @@ class AudioSpectogramDatasetwithLabels(Dataset):
             valid_stems = set(labeled_df["audio_file_stem"].values)
             self.file_paths = sorted([
                 p for p in self.dataset_dir.rglob("*.npy")
-                if str(p.stem).split("_")[0] in valid_stems
+                if "_".join(str(p.stem).split("_")[:-2]) in valid_stems
             ])
+            # print("\n"*3, "="*20, f"\n{self.file_paths}\n", "="*20, "\n"*3)
             # Build stem -> label lookup for O(1) access in __getitem__
             self.label_map = labeled_df.set_index("audio_file_stem")["label"].to_dict()
             # print("\n"*3, "="*20, f"\n{set(val for val in self.label_map.values())}\n", "="*20, "\n"*3)
@@ -67,7 +68,7 @@ class AudioSpectogramDatasetwithLabels(Dataset):
             x = x.unsqueeze(0)
 
         if self.label_map is not None:
-            label = self.label_map[str(file_path.stem).split("_")[0]]
+            label = self.label_map["_".join(str(file_path.stem).split("_")[:-2])]
             return x, str(file_path), label
         else:
             raise ValueError("No labels found. Use the `AudioSpectogramDataset` class.")

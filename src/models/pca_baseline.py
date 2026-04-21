@@ -73,8 +73,7 @@ class PCABaseline:
         
         return np.mean((X - X_reconstructed) ** 2)
 
-    def plot(self, figsize=(10, 6)):
-        """Plot cumulative explained variance curve. Only available in full mode."""
+    def plot(self, figsize=(10, 6), save_path=None):
         if self.pca_full is None:
             raise RuntimeError("plot() is only available when n_components is not fixed. Run in full mode.")
 
@@ -88,8 +87,15 @@ class PCABaseline:
         plt.legend(loc='best')
         plt.grid(True)
         plt.tight_layout()
-        plt.show()
 
+        if save_path is not None:
+            from pathlib import Path
+            save_path = Path(save_path)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+            print(f"Plot saved to: {save_path}")
+
+        plt.show()
         print(f"Optimal components for {int(self.variance_threshold * 100)}% variance: {self.optimal_n}")
 
     def summary(self):

@@ -75,4 +75,7 @@ class Decoder(nn.Module):
         zy = torch.cat([z, y_feat], dim=1)
         h = self.fc(zy)
         x_hat = self.decoder(h)
+        
+        assert x_hat.shape[-2:] == (self.input_height, self.input_width), f"Decoder output shape {x_hat.shape[-2:]} != expected ({self.input_height}, {self.input_width})"
+        
         return x_hat

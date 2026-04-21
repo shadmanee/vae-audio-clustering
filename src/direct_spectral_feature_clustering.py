@@ -20,7 +20,6 @@ def extract_raw_features(loader):
 
 def run_direct_clustering(
     modality: str = "audio",
-    save_dir = "direct",
     root: Path = Path("."),
     features_dir = config.FEATURES_DIR,
 ):
@@ -52,15 +51,13 @@ def run_direct_clustering(
     all_labels = np.concatenate([train_labels, test_labels], axis=0)
 
     print(f"Raw feature shape: {all_feats.shape}")
-
-    kmeans, metrics = run_KMeans(
-        latent_vecs=all_feats,
-        model_type=save_dir,
-        root=root
-    )
     
-    # print("I AM HERE")
+    return all_feats, all_labels
 
-    # save_result_to_csv(history=metrics, model_name=f"direct_{modality}", root=root)
+    # kmeans, metrics = run_KMeans(
+    #     latent_vecs=all_feats,
+    #     model_type=save_dir,
+    #     root=root
+    # )
 
-    return kmeans, metrics, all_feats, all_labels
+    # return kmeans, metrics, all_feats, all_labels

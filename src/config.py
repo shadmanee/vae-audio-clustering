@@ -29,8 +29,8 @@ class BaseConfig:
     VAE_TYPE = "conv" # ONLY CHANGE WHEN WORKING WITH BETA/CVAE: basic/conv
     
     # general user defined (fixed) parameters
-    EPOCHS = 100 # TODO: update 
-    TRIALS = 15 # TODO: update
+    EPOCHS = 60 # TODO: update 
+    TRIALS = 20 # TODO: update
     SHUFFLE = True
     # anneal over first 20% of total epochs
     ANNEALING_EPOCHS = int(0.2 * EPOCHS)

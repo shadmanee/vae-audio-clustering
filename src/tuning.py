@@ -2,7 +2,7 @@ from pathlib import Path
 import optuna, torch, numpy as np, os, shutil
 import torch.optim as optim
 from optuna.samplers import TPESampler
-from optuna.visualization import plot_parallel_coordinate, plot_param_importances, plot_optimization_history, plot_edf, plot_timeline, plot_contour
+from optuna.visualization import plot_parallel_coordinate, plot_param_importances, plot_optimization_history, plot_edf
 
 from config import BaseConfig, config
 from utils.common import split_data, train_vae
@@ -14,7 +14,7 @@ def _suggest_basic_vae(trial: optuna.trial.Trial):
     base_cfg.HIDDEN_DIM_1 = trial.suggest_categorical("HIDDEN_DIM_1", [512, 1024, 2048])
     base_cfg.HIDDEN_DIM_2 = trial.suggest_categorical("HIDDEN_DIM_2", [128, 256, 512])
     base_cfg.LATENT_DIM = trial.suggest_categorical("LATENT_DIM", [16, 32, 64])
-    base_cfg.BETA_TYPE = "fixed" # always fixed when NOT beta-VAE
+    base_cfg.BETA_TYPE = trial.suggest_categorical("BETA_TYPE", ["fixed"])
 
     return base_cfg
 
@@ -29,8 +29,7 @@ def _suggest_conv_vae(trial: optuna.trial.Trial):
     base_cfg.HIDDEN_DIM_2 = channel_1 * channel_2_multiplier
     base_cfg.HIDDEN_DIM_1 = channel_1 * channel_2_multiplier * channel_3_multiplier
     base_cfg.LATENT_DIM   = trial.suggest_categorical("LATENT_DIM", [16, 32, 64])
-    
-    base_cfg.BETA_TYPE = "fixed" # always fixed when NOT beta-VAE
+    base_cfg.BETA_TYPE = trial.suggest_categorical("BETA_TYPE", ["fixed"])
     
     from models.encoders.conv_encoder import Encoder
     temp_encoder = Encoder(layer_params={
@@ -57,8 +56,7 @@ def _suggest_beta_vae(trial: optuna.trial.Trial):
     base_cfg.HIDDEN_DIM_2 = channel_1 * channel_2_multiplier
     base_cfg.HIDDEN_DIM_1 = channel_1 * channel_2_multiplier * channel_3_multiplier
     base_cfg.LATENT_DIM   = trial.suggest_categorical("LATENT_DIM", [16, 32, 64])
-    
-    base_cfg.BETA_TYPE = "annealing"
+    base_cfg.BETA_TYPE = trial.suggest_categorical("BETA_TYPE", ["annealing"])
     base_cfg.BETA = trial.suggest_categorical("BETA", [1.0, 2.0, 3.0, 4.0, 5.0])
     
     from models.encoders.conv_encoder import Encoder
@@ -76,14 +74,35 @@ def _suggest_beta_vae(trial: optuna.trial.Trial):
     return base_cfg
 
 def _suggest_cvae(trial: optuna.trial.Trial):
-    return _suggest_conv_vae(trial=trial)
+    base_cfg = BaseConfig()
+
+    channel_1 = trial.suggest_categorical("CHANNEL_1", [2, 4, 8, 16, 32])
+    channel_2_multiplier = trial.suggest_categorical("CHANNEL_2_MULTIPLIER", [2, 4, 8])
+    channel_3_multiplier = trial.suggest_categorical("CHANNEL_3_MULTIPLIER", [2, 4, 8])
+
+    base_cfg.HIDDEN_DIM_3 = channel_1
+    base_cfg.HIDDEN_DIM_2 = channel_1 * channel_2_multiplier
+    base_cfg.HIDDEN_DIM_1 = channel_1 * channel_2_multiplier * channel_3_multiplier
+    base_cfg.LATENT_DIM   = trial.suggest_categorical("LATENT_DIM", [16, 32, 64])
+    base_cfg.BETA_TYPE = trial.suggest_categorical("BETA_TYPE", ["fixed"])
+    
+    from models.encoders.conv_encoder import Encoder
+    temp_encoder = Encoder(layer_params={
+        "input_height":      base_cfg.INPUT_HEIGHT,
+        "input_width":       base_cfg.INPUT_WIDTH,
+        "intermediate_dims": [base_cfg.HIDDEN_DIM_1, base_cfg.HIDDEN_DIM_2, base_cfg.HIDDEN_DIM_3],
+        "latent_dim":        base_cfg.LATENT_DIM
+    })
+
+    if temp_encoder.flattened_size > 50000:
+        print(f"Pruning — flattened_size={temp_encoder.flattened_size}")
+        raise optuna.exceptions.TrialPruned()
+
+    return base_cfg
 
 def _suggest_shared_parameters(trial: optuna.trial.Trial, base_cfg: BaseConfig):
     base_cfg.LR = trial.suggest_float("LR", 1e-4, 1e-3, log=True)
     base_cfg.BATCH_SIZE = trial.suggest_categorical("BATCH_SIZE", [16, 32, 64])
-    
-    # if base_cfg.BETA_CHOICE == "tunable":
-    #     base_cfg.BETA = trial.suggest_categorical("BETA", [1.0, 2.0, 3.0, 4.0, 5.0])
     
     return base_cfg
 
@@ -110,11 +129,9 @@ def make_objective_function(model_type, dataset, plot_dir_name=config.MODEL_TYPE
         
         train_loader, test_loader = split_data(dataset=dataset, ratio=0.8, batch_size=trial_cfg.BATCH_SIZE, shuffle=config.SHUFFLE)
         
-        # print("="*20, f"\n{next(iter(train_loader))}\n", "="*20)
-        
         model = VAE(cfg=trial_cfg, model_type=model_type, num_classes=num_classes).to(device=device)
         
-        # print("="*20, f"\n{model}\n", "="*20)
+        print("="*20, f"\n{model}\n", "="*20)
         
         optimizer = optim.Adam(model.parameters(), lr=trial_cfg.LR)
         
@@ -134,14 +151,16 @@ def make_objective_function(model_type, dataset, plot_dir_name=config.MODEL_TYPE
         )
         
         last_test_recon = history["test_recon"][-1]
-        last_test_kl = history["test_kl"][-1]
-        # last_total = history["test_total"][-1]
         
-        if np.isnan(last_test_recon) or np.isnan(last_test_kl):
-            return float(1e6)
-        
-        # if trial_cfg.BETA_TYPE == "fixed" else last_total
-        return 0.6 * last_test_recon + 0.4 * last_test_kl 
+        if model_type == "ae":
+            if np.isnan(last_test_recon):
+                return float(1e6)
+            return last_test_recon
+        else:
+            last_test_kl = history["test_kl"][-1]
+            if np.isnan(last_test_recon) or np.isnan(last_test_kl):
+                return float(1e6)
+            return 0.6 * last_test_recon + 0.4 * last_test_kl
     
     return objective
 
