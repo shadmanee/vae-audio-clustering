@@ -1,0 +1,15 @@
+ipykernel
+pandas
+kagglehub
+pydub
+matplotlib
+librosa
+scikit-learn
+torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+plotly
+optuna
+yellowbrick
+dotenv
+sentence-transformers
+umap-learn
+kaleido
